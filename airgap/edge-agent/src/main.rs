@@ -38,12 +38,15 @@ async fn main() -> Result<()> {
     let stmt = pg
         .prepare(
             "INSERT INTO readings \
-             (ts, sensor_id, temperature_c, pressure_bar, humidity_pct) \
-             VALUES (to_timestamp($1::bigint), $2, $3, $4, $5)",
+             (ts, sensor_id, temperature_c, pressure_bar, humidity_pct, source) \
+             VALUES (to_timestamp($1::bigint), $2, $3, $4, $5, 'rust')",
         )
         .await?;
 
-    let mut opts = MqttOptions::new("edge-agent-rust", mqtt_host.clone(), 1883);
+    let client_id = env::var("HOSTNAME")
+        .map(|h| format!("edge-agent-rust-{h}"))
+        .unwrap_or_else(|_| "edge-agent-rust".into());
+    let mut opts = MqttOptions::new(client_id, mqtt_host.clone(), 1883);
     opts.set_keep_alive(Duration::from_secs(30));
     let (client, mut eventloop) = AsyncClient::new(opts, 256);
     client.subscribe("factory/#", QoS::AtMostOnce).await?;

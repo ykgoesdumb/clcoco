@@ -23,7 +23,8 @@ data:
       sensor_id     TEXT             NOT NULL,
       temperature_c DOUBLE PRECISION,
       pressure_bar  DOUBLE PRECISION,
-      humidity_pct  DOUBLE PRECISION
+      humidity_pct  DOUBLE PRECISION,
+      source        TEXT             NOT NULL DEFAULT 'python'
     );
     SELECT create_hypertable('readings', 'ts', if_not_exists => TRUE);
     CREATE INDEX IF NOT EXISTS idx_readings_sensor_ts

@@ -112,6 +112,32 @@ data:
             "format": "table",
             "rawSql": "SELECT COUNT(DISTINCT sensor_id) AS \"count\" FROM readings WHERE ts > now() - INTERVAL '5 minutes'"
           }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Ingest rate by bridge (inserts / 5s)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 8, "w": 18, "x": 0, "y": 16 },
+          "fieldConfig": {
+            "defaults": { "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60 } }
+          },
+          "targets": [{
+            "refId": "A",
+            "format": "time_series",
+            "rawSql": "SELECT time_bucket('5 seconds', ts) AS time, source AS metric, COUNT(*) AS value FROM readings WHERE $__timeFilter(ts) GROUP BY time, source ORDER BY time"
+          }]
+        },
+        {
+          "type": "bargauge",
+          "title": "Rows by bridge (last 5m)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 16 },
+          "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true },
+          "targets": [{
+            "refId": "A",
+            "format": "table",
+            "rawSql": "SELECT source AS metric, COUNT(*)::bigint AS value FROM readings WHERE ts > now() - INTERVAL '5 minutes' GROUP BY source ORDER BY source"
+          }]
         }
       ]
     }
