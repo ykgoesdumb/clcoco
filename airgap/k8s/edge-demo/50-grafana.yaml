@@ -172,8 +172,15 @@ kind: Ingress
 metadata:
   name: grafana
   namespace: edge-demo
+  annotations:
+    cert-manager.io/cluster-issuer: airgap-ca
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
+  tls:
+  - hosts: [grafana.apps.airgap.local]
+    secretName: grafana-tls
   rules:
   - host: grafana.apps.airgap.local
     http:
