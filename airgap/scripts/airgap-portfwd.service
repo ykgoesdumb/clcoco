@@ -1,0 +1,13 @@
+[Unit]
+Description=Airgap hackathon iptables port forwarding
+After=network-online.target libvirtd.service
+Wants=network-online.target libvirtd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/ykgoesdumb/airgap/scripts/portfwd.sh apply
+ExecStop=/home/ykgoesdumb/airgap/scripts/portfwd.sh flush
+
+[Install]
+WantedBy=multi-user.target
