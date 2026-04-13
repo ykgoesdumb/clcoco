@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Distribute the edge-agent image to all k3s nodes and import via ctr.
 # No Harbor yet, so we bypass a registry and go directly into each node's
-# containerd image store. Runs on the Proxmox host.
+# containerd image store. Runs on the libvirt host.
 set -euo pipefail
 
 IMAGE="${IMAGE:-localhost/edge-agent:0.1.0}"

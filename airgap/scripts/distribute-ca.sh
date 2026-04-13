@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# distribute-ca.sh — runs ON the Proxmox/libvirt host.
+# distribute-ca.sh — runs ON the libvirt host.
 # Pulls the Root CA (and server certs) from the infra VM, then fans them out
 # to every other VM:
 #   * Installs ca.crt → /usr/local/share/ca-certificates/airgap-ca.crt + update-ca-certificates

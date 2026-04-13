@@ -6,6 +6,51 @@
 
 ---
 
+## 왜 이 시나리오인가 — 제조 엣지 + 폐쇄망
+
+우리가 타겟팅하는 고객은 **공장 / 방산 / 금융** — 모두 다음 두 가지 제약을 동시에 안고 있다:
+
+### 1. 제조 엣지의 런타임 제약
+
+PLC·센서·비전 파이프라인을 한 라인에 늘어놓으면 현장에서 올라오는 수치는 금세 **초당 수백~수천 포인트**가 된다. 이 데이터를 받아 쓰는 엣지 서버는 다음 조건을 모두 만족해야 한다:
+
+- **Predictable latency** — GC pause로 수십~수백 ms가 튀면 제어 루프가 깨진다. Stop-the-world가 없어야 한다.
+- **Low RSS** — 엣지 박스의 메인 리소스는 MES·비전 모델·OPC 서버가 먹는다. 브릿지/게이트웨이는 남는 자원만 써야 한다.
+- **Single static binary** — 의존성 지옥 금지. 현장 엔지니어가 `scp` 하나로 배포/롤백할 수 있어야 한다.
+- **산업용 프로토콜의 안전한 파싱** — Modbus / OPC-UA / MQTT 바이너리 프레임을 unsafe 언어로 처리하면 한 번의 malformed 패킷이 공정 전체를 멈춘다. 메모리 안전성은 선택이 아니다.
+
+그래서 우리 엣지 컴포넌트(`airgap/edge-agent`)는 **Rust**로 짰다. Python 브릿지와 **동일한 데이터 경로(MQTT → TimescaleDB)**를 공유하고, 데모에서는 두 언어 버전을 같은 토픽에 붙여 **Grafana에 나란히 그래프를 그려 비교**한다 (`edge-demo/50-grafana.yaml`의 *Ingest rate by bridge* / *Rows by bridge* 패널).
+
+기대 차이 (narrative):
+
+| 항목 | Python bridge | Rust edge-agent |
+|---|---|---|
+| 이미지 크기 | ~150 MB | ~15 MB (alpine + static bin) |
+| RSS (idle) | ~40 MB | ~5 MB |
+| 콜드 스타트 | initContainer pip install | 즉시 |
+| GC pause | 있음 | 없음 |
+
+### 2. 폐쇄망(airgap) 배포 제약
+
+위 엣지 컴포넌트는 공장 안에서 돌아야 한다. 공장 네트워크는 **밖으로 한 패킷도 나가지 않는 것을 전제**로 설계되어야 한다:
+
+- `crates.io` / `docker.io` / `pypi` / `github.com` 모두 **닿지 않음**.
+- 레지스트리도 CI도 내부에 **직접 설치**해야 한다 — Gitea + Harbor + Actions Runner.
+- 하지만 고객사 개발자는 설치 이후에도 **계속 코드를 고치고 배포**할 수 있어야 한다. "한 번 떨구고 끝"이 아니라 post-install dev loop가 닫혀야 한다.
+
+그래서 이 리포의 산출물은 두 개다:
+
+1. **인프라 레이어 자체** (이 리포 — libvirt 격리망 + DNS + NTP + 사설 CA + 포트포워딩)
+2. **오프라인 설치 번들** (`airgap/bundle/`) — k3s 바이너리, 전 이미지 `docker save` tar, `cargo vendor`된 Rust 의존성 트리, Gitea/Harbor 이미지, 설치 스크립트를 하나의 `.tgz`에 담아 고객사 airgap 내부로 반입. 반입 이후 customer의 Gitea Actions 러너가 vendor 디렉토리로 **오프라인 재빌드**까지 수행 가능 — 자세한 절차는 [`airgap/docs/RUST-OFFLINE-BUILD.md`](airgap/docs/RUST-OFFLINE-BUILD.md).
+
+### 데모에서 증명하는 것
+
+1. 호스트의 WiFi를 꺼도(`nmcli radio wifi off`) VM 클러스터는 정상 동작한다 → **airgap proof**.
+2. 같은 클러스터에서 Python과 Rust 브릿지가 **동시에** 돌며 Grafana에 나란히 찍힌다 → **엣지 런타임 비교**.
+3. 고객사 개발자가 Gitea에 push → Actions가 vendor로 오프라인 빌드 → Harbor에 이미지 업로드 → k3s 롤링 업데이트 → 브라우저 새로고침으로 버전 변경 확인 → **post-install dev loop가 닫혀 있다는 증명**.
+
+---
+
 ## Role Scope
 
 본 리포지토리는 **인프라 엔지니어 담당 영역**만 포함한다.
