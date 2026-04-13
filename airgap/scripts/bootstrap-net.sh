@@ -55,23 +55,31 @@ case "$CMD" in
   off)
     echo "==> Disabling egress for $VM ($IP)"
 
-    # VM-side: remove default route + restore resolv.conf
-    ssh_vm "sudo ip route del default via $BRIDGE_GW 2>/dev/null || true; \
+    # VM-side: keep default route via bridge GW (libvirt isolated net does NOT
+    # forward, so this is effectively a black-hole route — but k3s and other
+    # daemons require *a* default route to pick an interface on startup).
+    # Host-side FORWARD/MASQUERADE removal below is what actually re-airgaps.
+    ssh_vm "sudo ip route replace default via $BRIDGE_GW dev enp1s0; \
             if [ -f /etc/resolv.conf.airgap-save ]; then sudo mv /etc/resolv.conf.airgap-save /etc/resolv.conf; \
             else sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; fi" || true
 
-    # Host-side: remove rules tagged with this VM
+    # Host-side: remove rules tagged with this VM.
+    # iptables -S emits --comment VALUE without quotes, so pattern must be bare.
+    # pipefail + head -1 caused the loop to exit on SIGPIPE → disable inside.
     TAG="$COMMENT-$VM"
-    while sudo iptables -S FORWARD | grep -q -- "--comment \"$TAG\""; do
-      RULE=$(sudo iptables -S FORWARD | grep -- "--comment \"$TAG\"" | head -1 | sed 's/^-A /-D /')
+    PAT="--comment $TAG"
+    set +o pipefail
+    while sudo iptables -S FORWARD 2>/dev/null | grep -q -- "$PAT"; do
+      RULE=$(sudo iptables -S FORWARD | grep -- "$PAT" | head -1 | sed 's/^-A /-D /')
       # shellcheck disable=SC2086
       sudo iptables $RULE
     done
-    while sudo iptables -t nat -S POSTROUTING | grep -q -- "--comment \"$TAG\""; do
-      RULE=$(sudo iptables -t nat -S POSTROUTING | grep -- "--comment \"$TAG\"" | head -1 | sed 's/^-A /-D /')
+    while sudo iptables -t nat -S POSTROUTING 2>/dev/null | grep -q -- "$PAT"; do
+      RULE=$(sudo iptables -t nat -S POSTROUTING | grep -- "$PAT" | head -1 | sed 's/^-A /-D /')
       # shellcheck disable=SC2086
       sudo iptables -t nat $RULE
     done
+    set -o pipefail
 
     # Verify airgap restored
     if ssh_vm "timeout 3 curl -s -o /dev/null -w '%{http_code}' https://1.1.1.1" 2>/dev/null | grep -qv 000; then
