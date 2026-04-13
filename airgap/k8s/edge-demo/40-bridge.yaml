@@ -1,0 +1,124 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-code
+  namespace: edge-demo
+data:
+  bridge.py: |
+    """MQTT → TimescaleDB bridge.
+
+    Subscribes to factory/# and inserts every reading into the readings
+    hypertable. Runs in the edge-demo namespace with cluster DNS only.
+    """
+    import json
+    import os
+    import signal
+    import sys
+    import time
+
+    import paho.mqtt.client as mqtt
+    import psycopg2
+
+    MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
+    PG_HOST   = os.environ.get("PG_HOST", "timescaledb")
+    PG_USER   = os.environ["POSTGRES_USER"]
+    PG_PASS   = os.environ["POSTGRES_PASSWORD"]
+    PG_DB     = os.environ["POSTGRES_DB"]
+
+    for _ in range(60):
+        try:
+            conn = psycopg2.connect(
+                host=PG_HOST, user=PG_USER, password=PG_PASS, dbname=PG_DB
+            )
+            break
+        except psycopg2.OperationalError as exc:
+            print(f"waiting for pg: {exc}", flush=True)
+            time.sleep(2)
+    else:
+        print("pg not reachable after 120s", file=sys.stderr)
+        sys.exit(1)
+
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    inserted = 0
+
+    def on_message(_client, _userdata, msg):
+        global inserted
+        try:
+            d = json.loads(msg.payload)
+            cur.execute(
+                "INSERT INTO readings "
+                "(ts, sensor_id, temperature_c, pressure_bar, humidity_pct) "
+                "VALUES (to_timestamp(%s), %s, %s, %s, %s)",
+                (
+                    d["ts"],
+                    d["sensor_id"],
+                    d["temperature_c"],
+                    d["pressure_bar"],
+                    d["humidity_pct"],
+                ),
+            )
+            inserted += 1
+            if inserted % 50 == 0:
+                print(f"inserted={inserted}", flush=True)
+        except Exception as exc:
+            print(f"ERR: {exc}", flush=True)
+
+    c = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2, client_id="mqtt-tsdb-bridge"
+    )
+    c.on_message = on_message
+    c.connect(MQTT_HOST, 1883, 60)
+    c.subscribe("factory/#", qos=0)
+    signal.signal(signal.SIGTERM, lambda *_: (c.disconnect(), sys.exit(0)))
+    print(f"bridge online: {MQTT_HOST} → {PG_HOST}", flush=True)
+    c.loop_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-tsdb-bridge
+  namespace: edge-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: bridge }
+  template:
+    metadata:
+      labels: { app: bridge }
+    spec:
+      initContainers:
+      - name: pip
+        image: python:3.12-slim
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          pip install --no-cache-dir --target=/pip paho-mqtt==2.1.0 psycopg2-binary==2.9.9
+          echo "pip-ok"
+        volumeMounts:
+        - { name: pip, mountPath: /pip }
+      containers:
+      - name: bridge
+        image: python:3.12-slim
+        command: ["python", "-u", "/code/bridge.py"]
+        env:
+        - { name: PYTHONPATH, value: /pip }
+        - { name: MQTT_HOST,  value: mosquitto }
+        - { name: PG_HOST,    value: timescaledb }
+        envFrom:
+        - secretRef: { name: tsdb-secret }
+        volumeMounts:
+        - { name: pip,  mountPath: /pip,  readOnly: true }
+        - { name: code, mountPath: /code, readOnly: true }
+        resources:
+          requests: { cpu: 20m,  memory: 64Mi }
+          limits:   { cpu: 500m, memory: 256Mi }
+      volumes:
+      - name: pip
+        emptyDir: {}
+      - name: code
+        configMap: { name: bridge-code }

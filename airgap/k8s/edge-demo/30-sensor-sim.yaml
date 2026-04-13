@@ -1,0 +1,55 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-sim
+  namespace: edge-demo
+spec:
+  selector: { app: sensor-sim }
+  clusterIP: None
+  ports:
+  - { port: 1, name: none }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sensor-sim
+  namespace: edge-demo
+spec:
+  serviceName: sensor-sim
+  replicas: 3
+  selector:
+    matchLabels: { app: sensor-sim }
+  template:
+    metadata:
+      labels: { app: sensor-sim }
+    spec:
+      containers:
+      - name: sim
+        image: eclipse-mosquitto:2
+        env:
+        - { name: MQTT_HOST, value: mosquitto }
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          SID="$(hostname)"
+          IDX="${SID##*-}"
+          T0=$(date +%s)
+          echo "sensor $SID (idx=$IDX) publishing to factory/line1/$SID"
+          while true; do
+            NOW=$(date +%s)
+            E=$((NOW - T0))
+            PAYLOAD=$(awk -v sid="$SID" -v now="$NOW" -v e="$E" -v idx="$IDX" 'BEGIN{
+              srand(now + idx*1000 + 7);
+              pi = 3.141592653589793
+              temp = 22 + 5 * sin(2*pi*e/60.0 + idx) + (rand()-0.5)*0.4
+              pres = 1.00 + 0.05 * sin(2*pi*e/90.0 + idx*0.7) + (rand()-0.5)*0.02
+              hum  = 55 + 3 * sin(2*pi*e/120.0 + idx*1.3) + (rand()-0.5)*1.0
+              printf "{\"sensor_id\":\"%s\",\"ts\":%d,\"temperature_c\":%.2f,\"pressure_bar\":%.3f,\"humidity_pct\":%.1f}", sid, now, temp, pres, hum
+            }')
+            mosquitto_pub -h "$MQTT_HOST" -t "factory/line1/$SID" -m "$PAYLOAD" || echo "publish failed"
+            sleep 1
+          done
+        resources:
+          requests: { cpu: 10m, memory: 16Mi }
+          limits:   { cpu: 100m, memory: 64Mi }

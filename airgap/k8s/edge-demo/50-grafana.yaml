@@ -1,0 +1,186 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: edge-demo
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: TimescaleDB
+      uid: tsdb
+      type: postgres
+      access: proxy
+      url: timescaledb:5432
+      database: sensors
+      user: edge
+      secureJsonData:
+        password: edgedemo
+      jsonData:
+        sslmode: disable
+        postgresVersion: 1600
+        timescaledb: true
+      isDefault: true
+      editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: edge-demo
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+    - name: edge-demo
+      orgId: 1
+      folder: edge-demo
+      type: file
+      disableDeletion: false
+      updateIntervalSeconds: 30
+      options:
+        path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: edge-demo
+data:
+  factory.json: |
+    {
+      "title": "Factory Line 1 — Live Sensors",
+      "schemaVersion": 38,
+      "uid": "factory-line1",
+      "tags": ["edge", "factory"],
+      "timezone": "browser",
+      "time": { "from": "now-5m", "to": "now" },
+      "refresh": "5s",
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Temperature (°C)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [{
+            "refId": "A",
+            "format": "time_series",
+            "rawSql": "SELECT ts AS time, sensor_id AS metric, temperature_c AS value FROM readings WHERE $__timeFilter(ts) ORDER BY ts"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Pressure (bar)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [{
+            "refId": "A",
+            "format": "time_series",
+            "rawSql": "SELECT ts AS time, sensor_id AS metric, pressure_bar AS value FROM readings WHERE $__timeFilter(ts) ORDER BY ts"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Humidity (%)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "targets": [{
+            "refId": "A",
+            "format": "time_series",
+            "rawSql": "SELECT ts AS time, sensor_id AS metric, humidity_pct AS value FROM readings WHERE $__timeFilter(ts) ORDER BY ts"
+          }]
+        },
+        {
+          "type": "stat",
+          "title": "Readings / min (last 5m)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+          "targets": [{
+            "refId": "A",
+            "format": "table",
+            "rawSql": "SELECT COUNT(*)::float / 5 AS \"rate\" FROM readings WHERE ts > now() - INTERVAL '5 minutes'"
+          }]
+        },
+        {
+          "type": "stat",
+          "title": "Active sensors (5m)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+          "targets": [{
+            "refId": "A",
+            "format": "table",
+            "rawSql": "SELECT COUNT(DISTINCT sensor_id) AS \"count\" FROM readings WHERE ts > now() - INTERVAL '5 minutes'"
+          }]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: edge-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels: { app: grafana }
+    spec:
+      securityContext:
+        fsGroup: 472
+      containers:
+      - name: grafana
+        image: grafana/grafana:11.1.0
+        ports:
+        - { containerPort: 3000, name: http }
+        env:
+        - { name: GF_SECURITY_ADMIN_USER,       value: admin }
+        - { name: GF_SECURITY_ADMIN_PASSWORD,   value: admin }
+        - { name: GF_AUTH_ANONYMOUS_ENABLED,    value: "true" }
+        - { name: GF_AUTH_ANONYMOUS_ORG_ROLE,   value: Viewer }
+        - { name: GF_USERS_ALLOW_SIGN_UP,       value: "false" }
+        volumeMounts:
+        - { name: ds,  mountPath: /etc/grafana/provisioning/datasources }
+        - { name: dbp, mountPath: /etc/grafana/provisioning/dashboards }
+        - { name: dbs, mountPath: /var/lib/grafana/dashboards }
+        resources:
+          requests: { cpu: 50m,  memory: 128Mi }
+          limits:   { cpu: 500m, memory: 512Mi }
+      volumes:
+      - name: ds
+        configMap: { name: grafana-datasources }
+      - name: dbp
+        configMap: { name: grafana-dashboards-provider }
+      - name: dbs
+        configMap: { name: grafana-dashboards }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: edge-demo
+spec:
+  selector: { app: grafana }
+  ports:
+  - { port: 3000, targetPort: 3000, name: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: edge-demo
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: grafana.apps.airgap.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port: { number: 3000 }

@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tsdb-secret
+  namespace: edge-demo
+type: Opaque
+stringData:
+  POSTGRES_USER: edge
+  POSTGRES_PASSWORD: edgedemo
+  POSTGRES_DB: sensors
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tsdb-init
+  namespace: edge-demo
+data:
+  01-schema.sql: |
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+    CREATE TABLE IF NOT EXISTS readings (
+      ts            TIMESTAMPTZ      NOT NULL,
+      sensor_id     TEXT             NOT NULL,
+      temperature_c DOUBLE PRECISION,
+      pressure_bar  DOUBLE PRECISION,
+      humidity_pct  DOUBLE PRECISION
+    );
+    SELECT create_hypertable('readings', 'ts', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_readings_sensor_ts
+      ON readings(sensor_id, ts DESC);
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb
+  namespace: edge-demo
+spec:
+  selector: { app: timescaledb }
+  ports:
+  - { port: 5432, targetPort: 5432, name: pg }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: timescaledb
+  namespace: edge-demo
+spec:
+  serviceName: timescaledb
+  replicas: 1
+  selector:
+    matchLabels: { app: timescaledb }
+  template:
+    metadata:
+      labels: { app: timescaledb }
+    spec:
+      containers:
+      - name: timescaledb
+        image: timescale/timescaledb:latest-pg16
+        ports:
+        - { containerPort: 5432, name: pg }
+        envFrom:
+        - secretRef: { name: tsdb-secret }
+        env:
+        - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+        volumeMounts:
+        - { name: data, mountPath: /var/lib/postgresql/data }
+        - { name: init, mountPath: /docker-entrypoint-initdb.d/ }
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits:   { cpu: "1",  memory: 1Gi }
+      volumes:
+      - name: init
+        configMap: { name: tsdb-init }
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ReadWriteOnce]
+      storageClassName: local-path
+      resources:
+        requests: { storage: 10Gi }
