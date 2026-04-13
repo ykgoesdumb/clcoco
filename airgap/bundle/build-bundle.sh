@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AIRGAP_DIR="$REPO_ROOT/airgap"
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 K3S_VERSION="${K3S_VERSION:-v1.31.3+k3s1}"
 STAGE_ROOT="${STAGE_ROOT:-$SCRIPT_DIR/dist}"
 STAGE="$STAGE_ROOT/clcoco-bundle-$VERSION"
