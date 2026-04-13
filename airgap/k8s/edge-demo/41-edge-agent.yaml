@@ -1,0 +1,27 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-agent
+  namespace: edge-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: edge-agent }
+  template:
+    metadata:
+      labels: { app: edge-agent }
+    spec:
+      containers:
+      - name: edge-agent
+        image: localhost/edge-agent:0.1.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - { name: RUST_LOG,  value: info }
+        - { name: MQTT_HOST, value: mosquitto }
+        - { name: PG_HOST,   value: timescaledb }
+        envFrom:
+        - secretRef: { name: tsdb-secret }
+        resources:
+          requests: { cpu: 5m,   memory: 8Mi }
+          limits:   { cpu: 200m, memory: 32Mi }
