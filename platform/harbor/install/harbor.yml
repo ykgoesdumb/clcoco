@@ -41,7 +41,7 @@ log:
 trivy:
   ignore_unfixed: false
   skip_update: true
-  skip_java_db_update: false
+  skip_java_db_update: true
   offline_scan: true
   security_check: vuln
   insecure: false

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Harbor 전체 설치 스크립트
-# 실행 순서: Docker 설치 → Harbor 설치 → 프로젝트/로봇 계정 생성
+# 실행 순서: Docker 설치 → skopeo 설치 → Harbor 설치 → 프로젝트/로봇 계정 생성
 
 set -e
 
@@ -9,6 +9,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OFFLINE_DOCKER="/opt/offline-bundle/docker"
+OFFLINE_SKOPEO="/opt/offline-bundle/skopeo"
 OFFLINE_HARBOR="/opt/offline-bundle/harbor"
 HARBOR_YML="$SCRIPT_DIR/harbor.yml"
 HARBOR_VERSION="v2.10.2"
@@ -18,10 +19,10 @@ echo " Harbor 전체 설치 시작"
 echo "========================================="
 
 # ─────────────────────────────────────────
-# [1/4] Docker 설치
+# [1/5] Docker 설치
 # ─────────────────────────────────────────
 echo ""
-echo "[1/4] Docker 설치"
+echo "[1/5] Docker 설치"
 echo "-----------------------------------------"
 
 if command -v docker &>/dev/null; then
@@ -72,10 +73,38 @@ else
 fi
 
 # ─────────────────────────────────────────
-# [2/4] Harbor 설치
+# [2/5] skopeo 설치
 # ─────────────────────────────────────────
 echo ""
-echo "[2/4] Harbor 설치"
+echo "[2/5] skopeo 설치"
+echo "-----------------------------------------"
+
+if command -v skopeo &>/dev/null; then
+    echo "skopeo 이미 설치됨. 스킵."
+else
+    if ping -c1 -W2 8.8.8.8 &>/dev/null; then
+        echo "온라인 환경 감지 → 인터넷으로 설치"
+        apt-get install -y skopeo
+    else
+        echo "오프라인 환경 감지 → 번들로 설치"
+
+        if [ ! -d "$OFFLINE_SKOPEO" ]; then
+            echo "오류: $OFFLINE_SKOPEO 없음. 번들 마운트 확인."
+            exit 1
+        fi
+
+        dpkg -i $OFFLINE_SKOPEO/skopeo_*.deb
+    fi
+
+    skopeo --version
+    echo "skopeo 설치 완료"
+fi
+
+# ─────────────────────────────────────────
+# [3/5] Harbor 설치
+# ─────────────────────────────────────────
+echo ""
+echo "[3/5] Harbor 설치"
 echo "-----------------------------------------"
 
 if ping -c1 -W2 8.8.8.8 &>/dev/null; then
@@ -121,18 +150,18 @@ trap - ERR
 echo "Harbor 설치 완료"
 
 # ─────────────────────────────────────────
-# [3/4] 프로젝트 생성
+# [4/5] 프로젝트 생성
 # ─────────────────────────────────────────
 echo ""
-echo "[3/4] 프로젝트 생성"
+echo "[4/5] 프로젝트 생성"
 echo "-----------------------------------------"
 bash "$SCRIPT_DIR/../manifests/projects.sh"
 
 # ─────────────────────────────────────────
-# [4/4] 로봇 계정 생성
+# [5/5] 로봇 계정 생성
 # ─────────────────────────────────────────
 echo ""
-echo "[4/4] 로봇 계정 생성"
+echo "[5/5] 로봇 계정 생성"
 echo "-----------------------------------------"
 bash "$SCRIPT_DIR/../manifests/robots.sh"
 
