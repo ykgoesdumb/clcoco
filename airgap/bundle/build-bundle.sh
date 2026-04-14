@@ -60,8 +60,15 @@ echo "==> [3/10] building edge-agent image"
 (
     cd "$AIRGAP_DIR/edge-agent"
     cargo fetch
+    mkdir -p .cargo
     cargo vendor > .cargo/config.toml
-    "$CRI" build -t "$EDGE_AGENT_IMAGE" -f Containerfile .
+    # Docker 29.x BuildKit has trouble hashing the 200MB vendor/ COPY layer —
+    # workaround: disable BuildKit for this one build. Podman unaffected.
+    if [[ "$CRI" = docker ]]; then
+        DOCKER_BUILDKIT=0 "$CRI" build -t "$EDGE_AGENT_IMAGE" -f Containerfile .
+    else
+        "$CRI" build -t "$EDGE_AGENT_IMAGE" -f Containerfile .
+    fi
 )
 
 echo "==> [4/10] fetching platform manifests (cert-manager $CERT_MANAGER_VERSION, ArgoCD $ARGO_VERSION)"
@@ -160,6 +167,12 @@ shopt -u nullglob
 mkdir -p "$STAGE/src/edge-agent"
 cp -r "$AIRGAP_DIR"/edge-agent/{Cargo.toml,Cargo.lock,Containerfile,src,vendor,.cargo} \
       "$STAGE/src/edge-agent/"
+
+# apps/ — demo app source + k8s manifests + .gitea workflow. Needed for
+# bootstrap push (PREP.md §5) and for `kubectl apply -f apps/hello/k8s/` (§8).
+if [[ -d "$REPO_ROOT/apps" ]]; then
+    cp -r "$REPO_ROOT/apps" "$STAGE/apps"
+fi
 
 echo "==> [10/10] tar $OUT_TGZ"
 tar czf "$OUT_TGZ" -C "$STAGE_ROOT" "$(basename "$STAGE")"
