@@ -1,13 +1,14 @@
 # platform/
 
-폐쇄망 안에서 돌아갈 **내부 플랫폼 서비스** (Gitea + Harbor 등)의 설치/설정/매니페스트.
+폐쇄망 안에서 돌아갈 **내부 플랫폼 서비스** (Gitea + Harbor + k3s 통합 설정)의 설치/설정/매니페스트.
 
 ## 레이아웃
 
 ```
 platform/
 ├── gitea/      Gitea 설치 (VM 또는 k3s), Actions Runner, Runner용 이미지 사전 빌드
-└── harbor/     Harbor 설치, 프로젝트/로봇 계정 프로비저닝, TLS (airgap-ca 발급)
+├── harbor/     Harbor 설치, 프로젝트/로봇 계정 프로비저닝, TLS (airgap-ca 발급)
+└── k3s/        k3s-Harbor 통합 (containerd 미러 배선, imagePullSecret, Runner kubeconfig)
 ```
 
 ## 인프라 레이어와의 경계
