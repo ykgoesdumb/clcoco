@@ -24,15 +24,26 @@ echo "===== Harbor 설치 시작 ====="
 if ping -c1 -W2 8.8.8.8 &>/dev/null; then
     echo "온라인 환경 감지 → 인터넷으로 설치"
 
-    # Harbor 공식 GitHub에서 오프라인 설치 파일 다운로드
+    # 이전 실패 찌꺼기 정리 후 새로 시작
     INSTALL_DIR="/tmp/harbor-install"
+    rm -rf "$INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
+
+    # 실패 시 찌꺼기 자동 정리
+    cleanup() {
+        echo "설치 실패 → 임시 파일 정리 중..."
+        rm -rf "$INSTALL_DIR"
+        echo "정리 완료."
+    }
+    trap cleanup ERR
 
     curl -fsSL "https://github.com/goharbor/harbor/releases/download/${HARBOR_VERSION}/harbor-offline-installer-${HARBOR_VERSION}.tgz" \
         -o harbor-offline-installer.tgz
 
     tar xzf harbor-offline-installer.tgz
+
+    trap - ERR
 
 else
     echo "오프라인 환경 감지 → 번들로 설치"
