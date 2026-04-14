@@ -58,7 +58,7 @@
 | 2205      | k3s-worker2      | 192.168.10.22:22  | SSH               |
 | 2206      | dev              | 192.168.10.100:22 | SSH (앱 개발)     |
 | 3000      | gitea            | 192.168.10.11     | Gitea web UI      |
-| 8443      | harbor           | 192.168.10.12     | Harbor web/API    |
+| 8443      | harbor           | 192.168.10.12:443 | Harbor web/API    |
 | 30080     | k3s-worker1      | 192.168.10.21     | K8s NodePort      |
 
 모든 VM은 사용자 `airgap`만 활성화되어 있습니다.

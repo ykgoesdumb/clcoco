@@ -21,7 +21,7 @@ MAPS=(
   "2205:192.168.10.22:22"     # k3s-worker2
   "2206:192.168.10.100:22"    # dev
   "3000:192.168.10.11:3000"   # gitea web
-  "8443:192.168.10.12:8443"   # harbor web
+  "8443:192.168.10.12:443"    # harbor web (host-only indirection; VM-internal is 443)
   "30080:192.168.10.21:30080" # k8s NodePort (worker1)
 )
 
