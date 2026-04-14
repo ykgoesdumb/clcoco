@@ -4,6 +4,9 @@
 
 set -e
 
+# root 권한 확인
+[[ $(id -u) -eq 0 ]] || { echo "오류: root 권한 필요. sudo bash install-on-vm.sh 로 실행하세요."; exit 1; }
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OFFLINE_DOCKER="/opt/offline-bundle/docker"
 OFFLINE_HARBOR="/opt/offline-bundle/harbor"
