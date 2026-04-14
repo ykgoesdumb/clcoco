@@ -1,0 +1,75 @@
+services:
+  db:
+    image: harbor.airgap.local/mirror/postgres:16-alpine
+    container_name: gitea-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gitea
+      POSTGRES_PASSWORD: gitea_admin_pass
+      POSTGRES_DB: gitea
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gitea"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gitea:
+    image: harbor.airgap.local/mirror/gitea/gitea:1.22
+    container_name: gitea
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__server__DOMAIN: gitea.airgap.local
+      GITEA__server__ROOT_URL: http://gitea.airgap.local:3000/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__SSH_PORT: "222"
+      GITEA__server__DISABLE_SSH: "false"
+      GITEA__server__OFFLINE_MODE: "true"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: db:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: gitea_admin_pass
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__actions__ENABLED: "true"
+      GITEA__actions__DEFAULT_ACTIONS_URL: http://gitea.airgap.local:3000
+    ports:
+      - "3000:3000"
+      - "222:22"
+    volumes:
+      - ./data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/api/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  runner:
+    image: harbor.airgap.local/mirror/gitea/act_runner:0.3
+    container_name: gitea-runner
+    restart: unless-stopped
+    depends_on:
+      gitea:
+        condition: service_healthy
+    profiles: ["runner"]
+    env_file:
+      - ./runner.env
+    environment:
+      GITEA_INSTANCE_URL: http://gitea.airgap.local:3000
+      CONFIG_FILE: /config.yaml
+    extra_hosts:
+      - "gitea.airgap.local:host-gateway"
+      - "harbor.airgap.local:192.168.10.10"
+    volumes:
+      - ./runner:/data
+      - ./runner-config.yaml:/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
