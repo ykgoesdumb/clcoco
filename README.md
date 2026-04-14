@@ -185,9 +185,16 @@ Grafana: `https://grafana.apps.airgap.local/` → "Bridge Comparison: Python vs 
 
 ---
 
-## 시연 순서 (End-to-End Demo)
+## 시연 (Demo)
 
-"0에서 시작해 `git push` → 자동 배포까지" 정확히 무엇을 어떤 순서로 실행하는지. 각 단계 앞의 `[host]` / `[infra]` / `[harbor]` / `[k3s-master]` / `[gitea]` / `[dev]` 는 명령을 실행할 주체.
+시연에서는 **설치를 보여주지 않는다**. 이미 준비된 환경에서 airgap 컷오프 → `git push` 루프 → Rust/Python 런타임 비교 3막을 8분 안에.
+
+- **사전 준비 (1회)**: [`demo/PREP.md`](demo/PREP.md) — install 스크립트 실행·부트스트랩 push·스냅샷.
+- **시연 대본**: [`demo/RUNBOOK.md`](demo/RUNBOOK.md) — 창 배치·내레이션·체크포인트.
+- **사전 smoke test**: `demo/verify.sh` — 4 VM 도달성·Harbor/Gitea/k3s 상태·앱 200·Grafana 대시보드 ConfigMap 존재 검증.
+- **리허설 간 리셋**: `demo/reset.sh [snapshot]` — `demo-ready-*` qcow2 스냅샷으로 30초 복귀 후 `verify.sh` 재실행.
+
+아래 `[host]` / `[infra]` / `[harbor]` / `[k3s-master]` / `[gitea]` / `[dev]` 는 명령을 실행할 주체. 전 구간이 `nmcli radio wifi off` 상태에서 돌아간다는 걸 전제로 하는 단계별 설치 절차다 — 자세한 설치·데모 흐름은 위 `demo/` 문서 참조, 아래는 참고용 레퍼런스.
 
 ### 0. 사전 준비 (데모 시작 5분 전)
 ```bash
