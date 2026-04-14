@@ -1,0 +1,20 @@
+# /etc/rancher/k3s/registries.yaml — containerd mirror config
+# Rendered by install-registries.sh (substitutes @HARBOR_TOKEN@).
+# Applied by: `sudo systemctl restart k3s` (master) or `k3s-agent` (workers).
+mirrors:
+  "docker.io":
+    endpoint:
+      - "https://harbor.airgap.local/v2/mirror/docker.io"
+  "quay.io":
+    endpoint:
+      - "https://harbor.airgap.local/v2/mirror/quay.io"
+  "harbor.airgap.local":
+    endpoint:
+      - "https://harbor.airgap.local"
+configs:
+  "harbor.airgap.local":
+    tls:
+      ca_file: /opt/airgap-ca/ca.crt
+    auth:
+      username: "robot$k3s-puller"
+      password: "@HARBOR_TOKEN@"

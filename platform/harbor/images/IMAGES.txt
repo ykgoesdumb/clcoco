@@ -32,3 +32,15 @@ grafana/grafana:11.1.0
 rust:1.80-alpine
 python:3.12-slim
 alpine:3.19
+
+# ── kube-prometheus-stack (chart v61.9.0) ───────────
+# 초기 설치는 bootstrap-net 로 외부에서 당겨오지만, 파드 재스케줄 시
+# airgap 상태에서도 Harbor 미러로 재풀 가능하도록 저장.
+quay.io/prometheus/prometheus:v2.54.1
+quay.io/prometheus/alertmanager:v0.27.0
+quay.io/prometheus/node-exporter:v1.8.2
+quay.io/prometheus-operator/prometheus-operator:v0.76.2
+quay.io/prometheus-operator/prometheus-config-reloader:v0.76.2
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
+docker.io/grafana/grafana:11.2.0
+docker.io/kiwigrid/k8s-sidecar:1.27.5

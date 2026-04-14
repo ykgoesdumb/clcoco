@@ -6,9 +6,9 @@
 
 set -e
 
-HARBOR_URL="https://harbor.airgap.local"
-ADMIN_USER="admin"
-ADMIN_PASS="clcoco"
+HARBOR_URL="${HARBOR_URL:-https://harbor.airgap.local}"
+ADMIN_USER="${HARBOR_ADMIN_USER:-admin}"
+ADMIN_PASS="${HARBOR_ADMIN_PASS:-clcoco}"
 
 # ─────────────────────────────────────────
 # Harbor API 대기

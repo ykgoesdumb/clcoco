@@ -40,12 +40,19 @@ export ADMIN_USER DATA_DIR
 echo "========================================="
 echo " Gitea 전체 설치 시작"
 echo "========================================="
+echo
+echo "선결 조건 (Gitea compose 가 Harbor 미러를 가리키므로):"
+echo "  1. Harbor VM 이 먼저 기동·프로젝트/로봇 생성 완료"
+echo "  2. IMAGES.txt → Harbor mirror/ 에 push 완료"
+echo "     (Gitea 이미지 세트: postgres:16-alpine, gitea/gitea:1.22, gitea/act_runner:0.3)"
+echo "  3. 또는 bootstrap-net on → docker.io 직접 pull 가능 상태"
+echo
 
 # ─────────────────────────────────────────
-# [1/6] Docker / Compose 확인
+# [1/7] Docker / Compose 확인
 # ─────────────────────────────────────────
 echo ""
-echo "[1/6] Docker / Compose 확인"
+echo "[1/7] Docker / Compose 확인"
 echo "-----------------------------------------"
 command -v docker >/dev/null 2>&1 || {
     echo "오류: docker 미설치. Harbor VM 기준으로 설치 후 재시도."
@@ -57,10 +64,10 @@ docker compose version >/dev/null 2>&1 || {
 }
 
 # ─────────────────────────────────────────
-# [2/6] Harbor CA 신뢰 + /etc/hosts
+# [2/7] Harbor CA 신뢰 + /etc/hosts
 # ─────────────────────────────────────────
 echo ""
-echo "[2/6] Harbor CA 신뢰 + /etc/hosts"
+echo "[2/7] Harbor CA 신뢰 + /etc/hosts"
 echo "-----------------------------------------"
 if [ ! -s "$AIRGAP_CA" ]; then
     echo "경고: $AIRGAP_CA 없음 — Harbor 이미지 pull 실패 시 AIRGAP_CA 지정 필요"
@@ -83,10 +90,44 @@ if ! grep -qE "\sgitea\.airgap\.local(\s|$)" /etc/hosts; then
 fi
 
 # ─────────────────────────────────────────
-# [3/6] compose 기동 (db + gitea)
+# [3/7] 이미지 가용성 preflight (Harbor 미러 또는 egress)
 # ─────────────────────────────────────────
 echo ""
-echo "[3/6] compose 기동 (db + gitea)"
+echo "[3/7] 이미지 preflight"
+echo "-----------------------------------------"
+REQUIRED_IMAGES=(
+    "$HARBOR_FQDN/mirror/postgres:16-alpine"
+    "$HARBOR_FQDN/mirror/gitea/gitea:1.22"
+    "$HARBOR_FQDN/mirror/gitea/act_runner:0.3"
+)
+MISSING=()
+for img in "${REQUIRED_IMAGES[@]}"; do
+    echo -n "    $img ... "
+    if docker pull -q "$img" >/dev/null 2>&1; then
+        echo "OK"
+    else
+        echo "실패"
+        MISSING+=("$img")
+    fi
+done
+if [ ${#MISSING[@]} -gt 0 ]; then
+    cat >&2 <<EOF
+
+오류: 필수 이미지 pull 실패 (Harbor 미러 또는 egress 확인):
+$(printf '  - %s\n' "${MISSING[@]}")
+
+해결:
+  A. Harbor 먼저 세운 뒤 platform/harbor/images/push-all.sh 실행
+  B. 임시로 bootstrap-net on gitea → docker.io 에서 직접 당긴 뒤 다시 실행
+EOF
+    exit 1
+fi
+
+# ─────────────────────────────────────────
+# [4/7] compose 기동 (db + gitea)
+# ─────────────────────────────────────────
+echo ""
+echo "[4/7] compose 기동 (db + gitea)"
 echo "-----------------------------------------"
 install -d -m 0755 "$DATA_DIR"
 cp -f "$SCRIPT_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml"
@@ -112,10 +153,10 @@ docker inspect -f '{{.State.Health.Status}}' gitea 2>/dev/null | grep -q healthy
 }
 
 # ─────────────────────────────────────────
-# [4/6] admin 계정 + PAT
+# [5/7] admin 계정 + PAT
 # ─────────────────────────────────────────
 echo ""
-echo "[4/6] admin 계정 + PAT"
+echo "[5/7] admin 계정 + PAT"
 echo "-----------------------------------------"
 if docker exec -u git gitea gitea admin user list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "$ADMIN_USER"; then
     echo "$ADMIN_USER 이미 존재 — skip"
@@ -149,18 +190,18 @@ else
 fi
 
 # ─────────────────────────────────────────
-# [5/6] seed (org/repo) + runner 등록 토큰
+# [6/7] seed (org/repo) + runner 등록 토큰
 # ─────────────────────────────────────────
 echo ""
-echo "[5/6] seed + runner 등록 토큰"
+echo "[6/7] seed + runner 등록 토큰"
 echo "-----------------------------------------"
 bash "$SCRIPT_DIR/seed.sh"
 
 # ─────────────────────────────────────────
-# [6/6] runner 기동
+# [7/7] runner 기동
 # ─────────────────────────────────────────
 echo ""
-echo "[6/6] runner 기동"
+echo "[7/7] runner 기동"
 echo "-----------------------------------------"
 [ -s "$DATA_DIR/runner.env" ] || {
     echo "오류: $DATA_DIR/runner.env 없음 (seed.sh 실패)"

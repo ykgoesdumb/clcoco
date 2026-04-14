@@ -1,0 +1,31 @@
+name: build-and-deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login Harbor
+        env:
+          HARBOR_USER: ${{ secrets.HARBOR_USER }}
+          HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
+        run: echo "$HARBOR_PASS" | skopeo login harbor.airgap.local -u "$HARBOR_USER" --password-stdin
+
+      - name: Build + push
+        run: |
+          TAG=$(git rev-parse --short HEAD)
+          docker build --build-arg APP_VERSION=$TAG -t harbor.airgap.local/apps/hello:$TAG .
+          docker push harbor.airgap.local/apps/hello:$TAG
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Rollout
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kc
+          kubectl --kubeconfig=/tmp/kc -n apps set image deploy/hello hello=harbor.airgap.local/apps/hello:$TAG
+          kubectl --kubeconfig=/tmp/kc -n apps rollout status deploy/hello --timeout=180s

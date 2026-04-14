@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AIRGAP_DIR="$REPO_ROOT/airgap"
 PLATFORM_DIR_REPO="$REPO_ROOT/platform"
 
-VERSION="${VERSION:-0.1.1}"
+VERSION="${VERSION:-0.2.0}"
 K3S_VERSION="${K3S_VERSION:-v1.31.3+k3s1}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.15.3}"
 ARGO_VERSION="${ARGO_VERSION:-v2.12.3}"
@@ -101,6 +101,16 @@ for d in harbor gitea k3s; do
         echo "    platform/$d 없음 — 스킵 (담당자 작업 전)"
     fi
 done
+# Harbor VM docker-ce .deb set (optional, produced by fetch-docker-debs.sh).
+# install-on-vm.sh auto-detects /opt/offline-bundle/docker when egress is closed.
+DEB_SRC="$PLATFORM_DIR_REPO/harbor/install/docker-debs"
+if [[ -d "$DEB_SRC" ]] && compgen -G "$DEB_SRC/*.deb" >/dev/null; then
+    mkdir -p "$STAGE/docker"
+    cp "$DEB_SRC"/*.deb "$STAGE/docker/"
+    echo "    $(ls "$DEB_SRC"/*.deb | wc -l | tr -d ' ') docker deb(s) → $STAGE/docker/"
+else
+    echo "    docker-debs/ 없음 — 스킵 (fetch-docker-debs.sh 미실행, 온라인 설치 fallback)"
+fi
 
 echo "==> [7/10] fetching Harbor offline installer $HARBOR_VERSION"
 mkdir -p "$STAGE/platform/harbor/install"
@@ -129,10 +139,17 @@ fi
 echo "    $mcount mirror image(s) staged for Harbor push"
 
 echo "==> [9/10] copying manifests + Rust source (with vendor)"
-# Base manifests from the lab stack (skip 40-bridge.yaml — replaced by Rust edge-agent).
-for f in 00-namespace 10-mosquitto 20-timescaledb 30-sensor-sim 41-edge-agent 50-grafana; do
+# Base manifests from the lab stack (skip 40-bridge.yaml — Rust edge-agent is the bundle default;
+# both bridges coexist in lab/main-branch edge-demo/ for the comparison dashboard).
+# 51/52/55 = Grafana datasource+dashboards wired through kps sidecar; 60 = burst job demo.
+for f in 00-namespace 10-mosquitto 20-timescaledb 30-sensor-sim 41-edge-agent \
+         51-grafana-resources 52-comparison-dashboard 55-servicemonitors 60-burst-job; do
     cp "$AIRGAP_DIR/k8s/edge-demo/${f}.yaml" "$STAGE/manifests/edge-demo/"
 done
+# kube-prometheus-stack (HelmChart CR + installer helper) — lab target ns = monitoring.
+mkdir -p "$STAGE/platform/kps"
+cp "$AIRGAP_DIR/k8s/platform/kube-prometheus-stack/helmchart.yaml" "$STAGE/platform/kps/"
+cp "$AIRGAP_DIR/k8s/platform/kube-prometheus-stack/install.sh"     "$STAGE/platform/kps/"
 # Bundle-specific overlays (if any).
 shopt -s nullglob
 for f in "$SCRIPT_DIR"/manifests/edge-demo/*.yaml; do

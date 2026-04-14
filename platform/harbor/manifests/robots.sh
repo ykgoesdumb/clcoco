@@ -5,9 +5,9 @@
 
 set -e
 
-HARBOR_URL="https://harbor.airgap.local"
-ADMIN_USER="admin"
-ADMIN_PASS="clcoco"   # PoC 기본값 — 고객사 반입 전 변경
+HARBOR_URL="${HARBOR_URL:-https://harbor.airgap.local}"
+ADMIN_USER="${HARBOR_ADMIN_USER:-admin}"
+ADMIN_PASS="${HARBOR_ADMIN_PASS:-clcoco}"   # PoC 기본값 — 고객사 반입 전 HARBOR_ADMIN_PASS 로 오버라이드
 
 # 발급 토큰은 stdout 뿐 아니라 파일에도 저장 — 재발급 없이 재조회 가능
 TOKEN_FILE="${TOKEN_FILE:-$HOME/harbor-robot-tokens.txt}"

@@ -1,0 +1,54 @@
+# Gitea Runner RBAC — rollout-only access to the `apps` namespace.
+# Runner uses `kubectl set image deploy/<name> ...` after building+pushing to Harbor.
+# Deliberately scoped: no secrets, no other namespaces, no cluster-level verbs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-runner
+  namespace: apps
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitea-runner
+  namespace: apps
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitea-runner
+  namespace: apps
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitea-runner
+subjects:
+  - kind: ServiceAccount
+    name: gitea-runner
+    namespace: apps
+---
+# Long-lived SA token (k8s 1.24+ no longer auto-generates these).
+# Consumed by gen-runner-kubeconfig.sh.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-runner-token
+  namespace: apps
+  annotations:
+    kubernetes.io/service-account.name: gitea-runner
+type: kubernetes.io/service-account-token

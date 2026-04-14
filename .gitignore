@@ -1,3 +1,7 @@
 .omc/
 .claude/
 .DS_Store
+
+# Producer-side artifacts (binary, large, re-fetchable)
+platform/harbor/install/docker-debs/
+airgap/bundle/dist/
