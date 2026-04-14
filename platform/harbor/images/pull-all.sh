@@ -47,4 +47,5 @@ done < "$IMAGES_FILE"
 
 echo ""
 echo "===== 완료: $count개 이미지 → $OUT_DIR/ ====="
-echo "다음 단계: scp -P 2202 out/*.tar airgap@100.123.217.17:/tmp/images/"
+echo "다음 단계 — tar 와 함께 IMAGES.txt 도 같이 복사 (push-all.sh 가 단일 출처로 사용):"
+echo "  scp -P 2202 $OUT_DIR/*.tar $IMAGES_FILE airgap@100.123.217.17:/tmp/images/"

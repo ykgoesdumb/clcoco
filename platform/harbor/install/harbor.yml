@@ -9,10 +9,10 @@ https:
   certificate: /opt/airgap-ca/harbor.crt
   private_key: /opt/airgap-ca/harbor.key
 
-harbor_admin_password: clcoco
+harbor_admin_password: clcoco   # PoC 기본값 — 고객사 반입 전 변경
 
 database:
-  password: root123
+  password: root123   # PoC 기본값 — 고객사 반입 전 변경
   max_idle_conns: 100
   max_open_conns: 900
   conn_max_lifetime: 5m

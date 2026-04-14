@@ -7,7 +7,10 @@ set -e
 
 HARBOR_URL="https://harbor.airgap.local"
 ADMIN_USER="admin"
-ADMIN_PASS="clcoco"
+ADMIN_PASS="clcoco"   # PoC 기본값 — 고객사 반입 전 변경
+
+# 발급 토큰은 stdout 뿐 아니라 파일에도 저장 — 재발급 없이 재조회 가능
+TOKEN_FILE="${TOKEN_FILE:-$HOME/harbor-robot-tokens.txt}"
 
 # ─────────────────────────────────────────
 # 로봇 계정 생성 함수
@@ -29,6 +32,9 @@ create_robot() {
         SECRET=$(echo "$BODY" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
         echo "  이름:     robot\$${name}"
         echo "  비밀번호: $SECRET"
+        # 권한 0600 으로 기록 — 스크롤 놓쳐도 복구 가능
+        ( umask 077; echo "robot\$${name}: ${SECRET}" >> "$TOKEN_FILE" )
+        echo "  저장됨:   $TOKEN_FILE"
     elif [ "$HTTP_CODE" = "409" ]; then
         echo "  이미 존재: $name (스킵)"
     else
