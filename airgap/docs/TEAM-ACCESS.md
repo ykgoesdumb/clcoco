@@ -133,16 +133,18 @@ infra VM의 chrony가 stratum 10 권위 서버. 별도 설정 불필요.
 
 CA 인증서 + 서버 인증서 위치:
 
-| 파일                              | 어디                                 |
-|-----------------------------------|--------------------------------------|
-| `/opt/airgap-ca/ca.crt`           | 모든 VM (시스템 trust에 이미 등록됨) |
-| `/etc/ssl/certs/ca-certificates.crt` | 시스템 trust 번들 (CA 포함됨)     |
-| `/opt/airgap-ca/harbor.{crt,key}` | **harbor VM에만**                   |
-| `/opt/airgap-ca/gitea.{crt,key}`  | **gitea VM에만**                    |
+| 파일                                 | 어디                                                                      |
+|--------------------------------------|---------------------------------------------------------------------------|
+| `/etc/airgap-ca/ca.crt` (+ `ca.key`) | **infra VM만** — CA 권위자. 원본 발급소                                   |
+| `/opt/airgap-ca/ca.crt`              | infra 외 모든 VM (`distribute-ca.sh`가 복사, 시스템 trust에 이미 등록됨)  |
+| `/etc/ssl/certs/ca-certificates.crt` | 모든 VM 시스템 trust 번들 (CA 포함됨)                                     |
+| `/opt/airgap-ca/harbor.{crt,key}`    | **harbor VM에만**                                                         |
+| `/opt/airgap-ca/gitea.{crt,key}`     | **gitea VM에만**                                                          |
 
 검증:
 ```bash
-openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /opt/airgap-ca/ca.crt
+openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /opt/airgap-ca/ca.crt   # (non-infra VM)
+# infra VM이면:  openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /etc/airgap-ca/ca.crt
 ```
 
 #### Harbor / Gitea 설정 시

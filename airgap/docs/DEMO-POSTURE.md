@@ -40,10 +40,13 @@
 
 4. **사설 CA 신뢰 추가** — 시연용 호스트 브라우저가 `*.airgap.local` 서버 인증서 경고 안 띄우게:
    ```bash
-   sudo cp /etc/libvirt/airgap-ca.crt /usr/local/share/ca-certificates/  # (infra VM에서 당겨와야 함)
+   # infra VM의 원본 CA를 호스트 trust에 주입
+   ssh airgap@192.168.10.10 'sudo cat /etc/airgap-ca/ca.crt' \
+     | sudo tee /usr/local/share/ca-certificates/airgap-ca.crt >/dev/null
    sudo update-ca-certificates
    ```
-   (현재는 Grafana Ingress가 HTTP. cert-manager 들어가면 HTTPS로 전환되고 이 단계가 필요해짐.)
+   검증: `curl -sS -o /dev/null -w "%{http_code}\n" https://grafana.apps.airgap.local/api/health` → `200`.
+   Firefox는 자체 NSS trust를 쓰므로 별도 import 필요 (Chromium/Chrome은 시스템 trust 공유).
 
 ---
 
