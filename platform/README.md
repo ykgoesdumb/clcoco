@@ -13,7 +13,7 @@ platform/
 ## 인프라 레이어와의 경계
 
 - DNS(`*.airgap.local`), NTP, 사설 CA는 이미 `airgap/`에서 제공됨 — 별도로 띄우지 말 것.
-- 사용할 호스트네임: `gitea.apps.airgap.local`, `harbor.apps.airgap.local`.
+- 사용할 호스트네임: `gitea.airgap.local`, `harbor.airgap.local` (사설 CA가 이미 이 SAN으로 서버 인증서 발급해둠 — `airgap/scripts/infra-ca.sh`).
 - TLS 인증서는 cert-manager + `airgap-ca` ClusterIssuer(이미 `airgap/k8s/`에 설치됨)에서 발급받는다.
 - VM 레벨로 띄우는 경우 대상 VM은 `gitea` / `harbor` (`airgap/scripts/vm-spec.conf` 참조).
 

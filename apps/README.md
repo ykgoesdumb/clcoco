@@ -20,7 +20,7 @@ apps/
 ## 설계 제약
 
 - **오프라인 빌드가 가능해야 한다** — 의존성을 pre-vendor 하거나(Rust `cargo vendor`, Go `go mod vendor`, Node `npm ci --offline`) base 이미지에 미리 내장.
-- **이미지 푸시 대상은 `harbor.apps.airgap.local`** — airgap-ca로 서명된 TLS. Actions Runner는 이미 CA 신뢰 등록됨.
+- **이미지 푸시 대상은 `harbor.airgap.local`** — airgap-ca로 서명된 TLS (이 호스트네임으로 SAN 발급). Actions Runner는 이미 CA 신뢰 등록됨.
 - **k3s 배포 대상은 `edge-demo` 외 별도 네임스페이스** 권장 — `edge-demo`는 센서 파이프라인 전용으로 보존.
 - 매니페스트의 이미지 태그는 **커밋 SHA** 기준으로 찍을 것 (GitOps 데모 편의).
 
