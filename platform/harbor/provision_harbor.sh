@@ -55,6 +55,7 @@ fi
 # 로봇 계정 생성
 # Gitea Actions가 Harbor에 로그인할 때 쓰는 자동화용 계정
 # 사람 계정(admin) 대신 쓰는 이유: 비밀번호 변경/계정 삭제 시 파이프라인 영향 없게
+# Harbor 프로젝트 레벨 로봇 계정 이름 형식: robot$<프로젝트명>+<로봇이름>
 # ─────────────────────────────────────────
 echo "--- 로봇 계정 생성: $ROBOT_NAME ---"
 RESPONSE=$(curl -sk -w "\n%{http_code}" \
@@ -83,11 +84,11 @@ if [ "$HTTP_CODE" = "201" ]; then
     ROBOT_SECRET=$(echo "$BODY" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
     echo "===== 로봇 계정 생성 완료 ====="
     echo ""
-    echo "  이름:      robot\$${ROBOT_NAME}"
+    echo "  이름:      robot\$${PROJECT_NAME}+${ROBOT_NAME}"
     echo "  비밀번호:  $ROBOT_SECRET"
     echo ""
     echo "  Gitea Actions secret에 등록하세요:"
-    echo "  HARBOR_USERNAME=robot\$${ROBOT_NAME}"
+    echo "  HARBOR_USERNAME=robot\$${PROJECT_NAME}+${ROBOT_NAME}"
     echo "  HARBOR_PASSWORD=$ROBOT_SECRET"
 elif [ "$HTTP_CODE" = "409" ]; then
     echo "로봇 계정 이미 존재: $ROBOT_NAME (스킵)"
