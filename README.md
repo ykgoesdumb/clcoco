@@ -216,7 +216,7 @@ Grafana: `https://grafana.apps.airgap.local/` → "Bridge Comparison: Python vs 
 ### 2. 번들 생성 + 분배
 ```bash
 [host]$ platform/harbor/install/fetch-docker-debs.sh    # (선택) Harbor용 docker .deb 수집
-[host]$ airgap/bundle/build-bundle.sh                   # → dist/clcoco-bundle-0.2.0.tgz
+[host]$ airgap/bundle/build-bundle.sh                   # → dist/clcoco-bundle-0.1.1.tgz
 [host]$ airgap/scripts/distribute-bundle.sh             # 4 VM 동시 배포 (/opt/offline-bundle/)
 ```
 

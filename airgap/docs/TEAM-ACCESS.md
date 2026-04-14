@@ -60,6 +60,7 @@
 | 3000      | gitea            | 192.168.10.11     | Gitea web UI      |
 | 8443      | harbor           | 192.168.10.12:443 | Harbor web/API    |
 | 30080     | k3s-worker1      | 192.168.10.21     | K8s NodePort      |
+| 30443     | k3s-master       | 192.168.10.20:443 | Traefik websecure (grafana/argocd ingress) |
 
 모든 VM은 사용자 `airgap`만 활성화되어 있습니다.
 

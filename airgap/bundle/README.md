@@ -14,13 +14,16 @@ bundle/
 │   ├── 25-platform.sh        # CA 생성 → cert-manager → argocd + Ingress
 │   └── 30-apply-manifests.sh # edge-demo 매니페스트 적용
 ├── k3s/                      # k3s 바이너리 + 에어갭 이미지 + 설치 스크립트
-├── images/                   # 앱 + 플랫폼 컨테이너 이미지 (docker save)
+├── images/                   # k3s에 직접 load할 이미지 (edge-demo + cert-manager/argocd)
 ├── manifests/edge-demo/      # kubectl apply 대상 (앱)
-├── platform/                 # 플랫폼 매니페스트 스냅샷
-│   ├── cert-manager.yaml
+├── platform/                 # 플랫폼 매니페스트 + harbor/gitea/k3s 스크립트
+│   ├── cert-manager.yaml     # cert-manager 매니페스트 스냅샷
 │   ├── clusterissuer.yaml    # airgap-ca ClusterIssuer
 │   ├── argocd.yaml           # ArgoCD install.yaml 스냅샷
-│   └── argocd-ingress.yaml   # Traefik TLS Ingress + server.insecure ConfigMap
+│   ├── argocd-ingress.yaml   # Traefik TLS Ingress + server.insecure ConfigMap
+│   ├── harbor/               # install-on-vm.sh, harbor.yml, offline installer, mirror-images/, push-all.sh
+│   ├── gitea/                # install-on-vm.sh, docker-compose.yml, seed.sh, register-secrets.sh
+│   └── k3s/                  # registries.yaml.tmpl, install-registries.sh, rbac, gen-kubeconfig
 ├── src/                      # 고객사 재빌드용 소스 (Rust vendor 포함)
 │   └── edge-agent/
 └── docs/
@@ -86,14 +89,20 @@ sudo update-ca-certificates --fresh
 ./build-bundle.sh
 ```
 
-`build-bundle.sh`는:
+`build-bundle.sh`는 10단계로:
 
-1. k3s 바이너리 + airgap 이미지 다운로드
-2. Rust edge-agent 이미지 빌드 (`cargo vendor` → Containerfile build)
-3. 앱 이미지 (mosquitto / timescaledb / grafana) pull + save
-4. cert-manager / ArgoCD 매니페스트 다운로드 + 거기서 **참조된 이미지를 자동 추출**해 pull + save (이미지 리스트를 따로 유지보수 안 해도 됨)
-5. 매니페스트 + Rust 소스(vendor 포함) 스테이징
-6. `dist/clcoco-bundle-<version>.tgz`로 묶음
+1. 설치 스크립트 복사 (`install.sh`, `uninstall.sh`, `lib/*.sh`)
+2. k3s 바이너리 + airgap 이미지 다운로드
+3. Rust edge-agent 이미지 빌드 (`cargo vendor` → Containerfile build)
+4. cert-manager / ArgoCD 매니페스트 다운로드 + 거기서 **참조된 이미지를 자동 추출**
+5. 앱 + 플랫폼 이미지 일괄 pull/save (→ `images/`, k3s에 직접 로드용)
+6. `platform/{harbor,gitea,k3s}/` 전체 스크립트 번들에 복사
+7. Harbor offline installer tarball fetch (`platform/harbor/install/`)
+8. `platform/harbor/images/IMAGES.txt` 기준 mirror 이미지 pull/save (→ `platform/harbor/mirror-images/`, Harbor push용)
+9. edge-demo 매니페스트 + Rust 소스(vendor 포함) 스테이징
+10. `dist/clcoco-bundle-<version>.tgz`로 묶음
+
+5와 8의 차이 — edge-demo 이미지(mosquitto/timescaledb/grafana)는 **양쪽에 중복** 포함. 이유: edge-demo 가 Harbor 기동 전에 먼저 떠야 하므로 k3s 에 직접 load, 그리고 Harbor 미러 카탈로그 일원화를 위해 한 번 더.
 
 ## 고객사가 소스 수정 후 재빌드하려면
 
