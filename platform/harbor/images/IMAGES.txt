@@ -1,0 +1,27 @@
+# Harbor에 미러링할 이미지 목록
+# 형식: <registry>/<image>:<tag>
+# 주석(#)과 빈 줄은 무시됨
+#
+# pull-all.sh로 tar 생성 → push-all.sh로 Harbor에 업로드
+# 이미지 추가 시 담당자별로 아래 섹션에 추가 후 PR
+
+# ── Gitea / CI ──────────────────────────────────────
+# gitea/gitea:1.22
+# gitea/act_runner:0.2
+# postgres:16-alpine
+
+# ── k3s 시스템 ──────────────────────────────────────
+# rancher/mirrored-pause:3.6
+# rancher/mirrored-coredns-coredns:1.10.1
+# rancher/local-path-provisioner:v0.0.26
+# traefik:v3.0
+
+# ── Edge Demo (인프라 담당) ─────────────────────────
+# eclipse-mosquitto:2.0
+# timescale/timescaledb:2.14.2-pg16
+# grafana/grafana:10.4.0
+
+# ── 빌드 베이스 (Gitea Runner용) ────────────────────
+# rust:1.80-alpine
+# python:3.12-slim
+# alpine:3.19
