@@ -107,47 +107,51 @@ echo ""
 echo "[3/5] Harbor 설치"
 echo "-----------------------------------------"
 
-if ping -c1 -W2 8.8.8.8 &>/dev/null; then
-    echo "온라인 환경 감지 → 인터넷으로 설치"
-
-    INSTALL_DIR="/tmp/harbor-install"
-    rm -rf "$INSTALL_DIR"
-    mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
-
-    cleanup() {
-        echo "설치 실패 → 임시 파일 정리 중..."
-        rm -rf "$INSTALL_DIR"
-        echo "정리 완료."
-    }
-    trap cleanup ERR
-
-    curl -fsSL "https://github.com/goharbor/harbor/releases/download/${HARBOR_VERSION}/harbor-offline-installer-${HARBOR_VERSION}.tgz" \
-        -o harbor-offline-installer.tgz
-
-    tar xzf harbor-offline-installer.tgz
-
+if docker ps 2>/dev/null | grep -q harbor-core; then
+    echo "Harbor 이미 실행 중. 스킵."
 else
-    echo "오프라인 환경 감지 → 번들로 설치"
+    if ping -c1 -W2 8.8.8.8 &>/dev/null; then
+        echo "온라인 환경 감지 → 인터넷으로 설치"
 
-    if [ ! -d "$OFFLINE_HARBOR" ]; then
-        echo "오류: $OFFLINE_HARBOR 없음. 번들 마운트 확인."
-        exit 1
+        INSTALL_DIR="/tmp/harbor-install"
+        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
+
+        cleanup() {
+            echo "설치 실패 → 임시 파일 정리 중..."
+            rm -rf "$INSTALL_DIR"
+            echo "정리 완료."
+        }
+        trap cleanup ERR
+
+        curl -fsSL "https://github.com/goharbor/harbor/releases/download/${HARBOR_VERSION}/harbor-offline-installer-${HARBOR_VERSION}.tgz" \
+            -o harbor-offline-installer.tgz
+
+        tar xzf harbor-offline-installer.tgz
+
+    else
+        echo "오프라인 환경 감지 → 번들로 설치"
+
+        if [ ! -d "$OFFLINE_HARBOR" ]; then
+            echo "오류: $OFFLINE_HARBOR 없음. 번들 마운트 확인."
+            exit 1
+        fi
+
+        INSTALL_DIR="$OFFLINE_HARBOR"
+        cd "$INSTALL_DIR"
+
+        tar xzf harbor-offline-installer-*.tgz
     fi
 
-    INSTALL_DIR="$OFFLINE_HARBOR"
-    cd "$INSTALL_DIR"
+    cd harbor
+    cp "$HARBOR_YML" harbor.yml
+    ./install.sh
 
-    tar xzf harbor-offline-installer-*.tgz
+    trap - ERR
+
+    echo "Harbor 설치 완료"
 fi
-
-cd harbor
-cp "$HARBOR_YML" harbor.yml
-./install.sh
-
-trap - ERR
-
-echo "Harbor 설치 완료"
 
 # ─────────────────────────────────────────
 # [4/5] 프로젝트 생성
