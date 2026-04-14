@@ -6,9 +6,9 @@
 # 이미지 추가 시 담당자별로 아래 섹션에 추가 후 PR
 
 # ── Gitea / CI ──────────────────────────────────────
-# gitea/gitea:1.22
-# gitea/act_runner:0.2
-# postgres:16-alpine
+gitea/gitea:1.22
+gitea/act_runner:0.3
+postgres:16-alpine
 
 # ── k3s 시스템 ──────────────────────────────────────
 # rancher/mirrored-pause:3.6
