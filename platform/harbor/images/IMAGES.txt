@@ -13,7 +13,7 @@
 
 # ── Gitea / CI ──────────────────────────────────────
 gitea/gitea:1.22
-gitea/act_runner:0.2.11
+gitea/act_runner:0.3
 postgres:16-alpine
 
 # ── k3s 시스템 ──────────────────────────────────────
