@@ -183,7 +183,166 @@ openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /opt/airgap-ca/ca.crt
 
 ---
 
-## 7. 연락 / 운영 링크
+## 7. 로컬 `kubectl`로 k3s 접근 (SSH 터널)
+
+k3s API 서버(`:6443`)는 airgap 내부에만 떠 있으므로 SSH 터널로 로컬에 포워딩하는 방식을 사용합니다. 호스트나 API에 포트를 직접 뚫지 않으므로 airgap 무결성이 유지됩니다.
+
+### 7.1 전제
+- §1에서 안내한 SSH pubkey가 등록되어 있어 `ssh -p 2203 airgap@100.123.217.17` 가 비밀번호 없이 붙어야 함
+- 로컬에 `kubectl` 설치 (`brew install kubectl` / `apt install kubectl`)
+
+### 7.2 일회성 설정 (최초 1회) — macOS / Linux
+
+```bash
+# 1) kubeconfig 받아오기 (k3s-master에서 읽어와 로컬로)
+mkdir -p ~/.kube
+ssh -p 2203 airgap@100.123.217.17 'sudo cat /etc/rancher/k3s/k3s.yaml' > ~/.kube/airgap-config
+chmod 600 ~/.kube/airgap-config
+
+# 2) server URL을 127.0.0.1로 (터널 엔드포인트)
+#    macOS
+sed -i '' 's|https://127.0.0.1:6443|https://127.0.0.1:6443|' ~/.kube/airgap-config
+#    Linux
+# sed -i 's|https://127.0.0.1:6443|https://127.0.0.1:6443|' ~/.kube/airgap-config
+
+# 3) context 이름 충돌 방지 (default → airgap)
+sed -i.bak 's/name: default$/name: airgap/g; s/cluster: default$/cluster: airgap/; s/user: default$/user: airgap/; s/current-context: default/current-context: airgap/' ~/.kube/airgap-config && rm ~/.kube/airgap-config.bak
+
+# 4) 기존 ~/.kube/config에 병합 (선택 — 격리하려면 이 단계 생략하고 매번 KUBECONFIG=~/.kube/airgap-config 사용)
+cp ~/.kube/config ~/.kube/config.bak-$(date +%Y%m%d)
+KUBECONFIG=~/.kube/config:~/.kube/airgap-config kubectl config view --flatten > /tmp/merged-kube
+mv /tmp/merged-kube ~/.kube/config
+chmod 600 ~/.kube/config
+```
+
+검증: `kubectl config get-contexts`에 `airgap` context가 보이면 성공.
+
+### 7.3 `~/.ssh/config` — SSH 붙을 때 터널 자동 개방
+
+```
+Host airgap-host
+  HostName 100.123.217.17
+  Port 2203
+  User airgap
+  LocalForward 6443 127.0.0.1:6443
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+```
+
+- `LocalForward 6443 127.0.0.1:6443` — 로컬 6443 → k3s-master VM 내부의 6443으로 포워드 (VM 안에서 보면 k3s API는 `127.0.0.1:6443`에 바인딩됨)
+- 로컬 6443이 이미 사용 중이면 `LocalForward 16443 127.0.0.1:6443`으로 바꾸고, kubeconfig의 `:6443`도 `:16443`으로 수정
+
+### 7.4 사용
+
+```bash
+# 터미널 A — 터널 세션 유지 (이 창 닫으면 kubectl 끊김)
+ssh -N airgap-host
+
+# 터미널 B
+kubectl config use-context airgap
+kubectl get nodes
+```
+
+백그라운드로 돌리고 싶으면:
+```bash
+ssh -fN airgap-host     # -f: fork, -N: 명령 실행 안 함
+pgrep -fl 'ssh.*airgap-host'   # 확인
+pkill -f 'ssh.*-N airgap-host' # 종료
+```
+
+### 7.5 Windows (PowerShell)
+
+Windows 10/11 내장 OpenSSH 클라이언트 + `kubectl` 기준. OpenSSH가 없으면 `설정 → 앱 → 선택적 기능 → OpenSSH 클라이언트` 설치. `kubectl`은 `winget install -e --id Kubernetes.kubectl` 또는 `choco install kubernetes-cli`.
+
+**1) kubeconfig 받아오기 + 편집** (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.kube" | Out-Null
+
+# k3s-master에서 kubeconfig 덤프 (raw 모드로 받아야 CR/LF 변환 안 됨)
+ssh -p 2203 airgap@100.123.217.17 "sudo cat /etc/rancher/k3s/k3s.yaml" |
+  Set-Content -NoNewline "$HOME\.kube\airgap-config"
+
+# server URL을 127.0.0.1로, context명을 airgap으로
+(Get-Content "$HOME\.kube\airgap-config") `
+  -replace 'https://127.0.0.1:6443', 'https://127.0.0.1:6443' `
+  -replace 'name: default$', 'name: airgap' `
+  -replace 'cluster: default$', 'cluster: airgap' `
+  -replace 'user: default$', 'user: airgap' `
+  -replace 'current-context: default', 'current-context: airgap' |
+  Set-Content "$HOME\.kube\airgap-config"
+
+# 파일 권한 (kubectl 경고 방지)
+icacls "$HOME\.kube\airgap-config" /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+```
+
+**2) 기본 config에 병합** (선택):
+
+```powershell
+Copy-Item "$HOME\.kube\config" "$HOME\.kube\config.bak-$(Get-Date -Format yyyyMMdd)"
+$env:KUBECONFIG = "$HOME\.kube\config;$HOME\.kube\airgap-config"   # Windows는 세미콜론
+kubectl config view --flatten | Set-Content "$HOME\.kube\config.new"
+Move-Item -Force "$HOME\.kube\config.new" "$HOME\.kube\config"
+Remove-Item Env:KUBECONFIG
+```
+
+**3) `~\.ssh\config`** (`%USERPROFILE%\.ssh\config` — 없으면 만들기. 메모장 또는 `notepad $HOME\.ssh\config`):
+
+```
+Host airgap-host
+  HostName 100.123.217.17
+  Port 2203
+  User airgap
+  IdentityFile ~/.ssh/id_ed25519
+  LocalForward 6443 127.0.0.1:6443
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+```
+
+**4) 사용**:
+
+```powershell
+# 포그라운드 (창 닫으면 터널 종료)
+ssh -N airgap-host
+
+# 백그라운드 (별도 창에서)
+Start-Process ssh -ArgumentList "-N airgap-host" -WindowStyle Hidden
+
+kubectl config use-context airgap
+kubectl get nodes
+
+# 터널 종료 (백그라운드 ssh 찾아서 kill)
+Get-CimInstance Win32_Process -Filter "Name='ssh.exe'" |
+  Where-Object { $_.CommandLine -like '*airgap-host*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```
+
+**WSL 사용자**: WSL 안에서는 §7.2 (Linux) 절차 그대로. `~/.ssh/config`, `~/.kube/config`는 WSL 배포판 내부 경로. Windows 본체의 `kubectl`과는 별도로 관리됨.
+
+---
+
+### 7.6 context 전환
+
+```bash
+kubectl config use-context airgap           # airgap k3s
+kubectl config use-context <기존 context>    # 원래 클러스터로 복귀
+kubectl config get-contexts                  # 목록
+```
+
+### 7.7 트러블슈팅
+
+| 증상 | 원인 / 조치 |
+|------|-------------|
+| `Unable to connect to the server: dial tcp 127.0.0.1:6443` | 터널 미기동 — `ssh -fN airgap-host` (Windows는 §7.5 참조) |
+| `bind: Address already in use` / `Only one usage of each socket address` | 로컬 6443 점유됨 — macOS/Linux `lsof -i :6443`, Windows `Get-NetTCPConnection -LocalPort 6443`. `LocalForward`를 `16443`으로 바꾸고 kubeconfig의 `:6443`도 `:16443`으로 수정 |
+| `x509: certificate signed by unknown authority` | kubeconfig의 `certificate-authority-data`가 k3s-master 것이 아님 — §7.2 / §7.5 1)부터 다시 |
+| `Permission denied (publickey)` SSH 시점 | pubkey 미등록 — @kyle에게 §1대로 요청 |
+| `kubectl`은 되는데 이상한 클러스터에 붙음 | `kubectl config current-context` 확인, `use-context airgap` |
+| Windows `sudo: command not found` | `ssh -p 2203 airgap@... "sudo cat ..."` — Windows가 아닌 **원격 VM**에서 sudo 실행. 정상. SSH 쪽 문제일 경우 §7.5 전제 재확인 |
+
+---
+
+## 8. 연락 / 운영 링크
 
 - Infra 엔지니어: @kyle (호스트 `ykgoesdumb` 관리, 네트워크/CA/DNS/NTP)
 - 인프라 변경 요청 / VM 재기동 / 추가 키 등록은 슬랙 DM
