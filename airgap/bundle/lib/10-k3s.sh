@@ -18,7 +18,7 @@ else
         /var/lib/rancher/k3s/agent/images/airgap-images.tar.zst
 
     INSTALL_K3S_SKIP_DOWNLOAD=true \
-    INSTALL_K3S_EXEC="server --disable traefik --write-kubeconfig-mode 644" \
+    INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644" \
         sh "$K3S_DIR/install.sh"
 fi
 
