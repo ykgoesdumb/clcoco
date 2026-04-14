@@ -23,6 +23,7 @@ MAPS=(
   "3000:192.168.10.11:3000"   # gitea web
   "8443:192.168.10.12:443"    # harbor web (host-only indirection; VM-internal is 443)
   "30080:192.168.10.21:30080" # k8s NodePort (worker1)
+  "30443:192.168.10.20:443"   # traefik websecure (grafana/argocd ingress)
 )
 
 COMMENT="airgap-portfwd"

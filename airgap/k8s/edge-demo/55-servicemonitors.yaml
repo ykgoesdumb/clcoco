@@ -1,0 +1,43 @@
+---
+# Tells the Prometheus Operator to scrape both bridges' /metrics endpoint.
+# `serviceMonitorSelectorNilUsesHelmValues: false` in kube-prometheus-stack
+# values means the operator picks up SMs from any namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: bridge-python
+  namespace: edge-demo
+  labels:
+    app: bridge
+    bridge: python
+spec:
+  namespaceSelector:
+    matchNames: [edge-demo]
+  selector:
+    matchLabels:
+      app: bridge
+      bridge: python
+  endpoints:
+  - port: metrics
+    interval: 5s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: bridge-rust
+  namespace: edge-demo
+  labels:
+    app: edge-agent
+    bridge: rust
+spec:
+  namespaceSelector:
+    matchNames: [edge-demo]
+  selector:
+    matchLabels:
+      app: edge-agent
+      bridge: rust
+  endpoints:
+  - port: metrics
+    interval: 5s
+    path: /metrics

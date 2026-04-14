@@ -10,11 +10,13 @@ spec:
     matchLabels: { app: edge-agent }
   template:
     metadata:
-      labels: { app: edge-agent }
+      labels:
+        app: edge-agent
+        bridge: rust
     spec:
       containers:
       - name: edge-agent
-        image: localhost/edge-agent:0.1.1
+        image: localhost/edge-agent:0.2.0
         imagePullPolicy: IfNotPresent
         env:
         - { name: RUST_LOG,  value: info }
@@ -22,6 +24,21 @@ spec:
         - { name: PG_HOST,   value: timescaledb }
         envFrom:
         - secretRef: { name: tsdb-secret }
+        ports:
+        - { containerPort: 9090, name: metrics }
         resources:
           requests: { cpu: 5m,   memory: 8Mi }
-          limits:   { cpu: 200m, memory: 32Mi }
+          limits:   { cpu: 200m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-agent
+  namespace: edge-demo
+  labels:
+    app: edge-agent
+    bridge: rust
+spec:
+  selector: { app: edge-agent }
+  ports:
+  - { name: metrics, port: 9090, targetPort: metrics }

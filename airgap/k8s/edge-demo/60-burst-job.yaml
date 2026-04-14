@@ -1,0 +1,49 @@
+---
+# Climax-of-demo workload: shovel ~10K MQTT messages at the broker as fast as
+# the loop can publish. Both bridges receive the same firehose; the comparison
+# dashboard should show Python's queue depth + p99 latency spike while Rust
+# stays flat. Topic prefix `factory/burst/...` so the burst rows are
+# selectable in TimescaleDB (sensor_id LIKE 'burst-%').
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: burst
+  namespace: edge-demo
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: burst }
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: burst
+        image: eclipse-mosquitto:2
+        env:
+        - { name: MQTT_HOST, value: mosquitto }
+        - { name: COUNT,     value: "10000" }
+        - { name: PARALLEL,  value: "200" }
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "burst: pushing $COUNT msgs in waves of $PARALLEL"
+          T0=$(date +%s)
+          NOW=$(date +%s)
+          i=0
+          while [ "$i" -lt "$COUNT" ]; do
+            j=0
+            while [ "$j" -lt "$PARALLEL" ] && [ "$i" -lt "$COUNT" ]; do
+              i=$((i + 1))
+              j=$((j + 1))
+              PAYLOAD=$(printf '{"sensor_id":"burst-%d","ts":%d,"temperature_c":25.0,"pressure_bar":1.000,"humidity_pct":50.0}' "$i" "$NOW")
+              mosquitto_pub -h "$MQTT_HOST" -t "factory/burst/$i" -m "$PAYLOAD" &
+            done
+            wait
+          done
+          T1=$(date +%s)
+          echo "burst done: $COUNT msgs in $((T1 - T0))s"
+        resources:
+          requests: { cpu: 100m, memory: 64Mi }
+          limits:   { cpu: 1000m, memory: 256Mi }

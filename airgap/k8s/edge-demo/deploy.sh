@@ -18,9 +18,15 @@ echo "==> [1/4] Opening temp egress on 3 k3s nodes"
 for n in "${NODES[@]}"; do "$BOOTSTRAP" on "$n"; done
 sleep 3
 
-echo "==> [2/4] Shipping manifests to master"
+echo "==> [2/4] Shipping manifests to master (excluding burst Job)"
 ssh "${SSH_OPTS[@]}" airgap@"$MASTER_IP" "rm -rf /tmp/edge-demo && mkdir -p /tmp/edge-demo"
-scp "${SSH_OPTS[@]}" -q "$SCRIPT_DIR"/*.yaml airgap@"$MASTER_IP":/tmp/edge-demo/
+# 60-burst-job is on-demand only — see scripts/run-burst.sh
+for f in "$SCRIPT_DIR"/*.yaml; do
+  case "$(basename "$f")" in
+    60-burst-job.yaml) continue ;;
+  esac
+  scp "${SSH_OPTS[@]}" -q "$f" airgap@"$MASTER_IP":/tmp/edge-demo/
+done
 
 echo "==> [3/4] Applying manifests"
 KUBE apply -f /tmp/edge-demo/
@@ -30,7 +36,7 @@ KUBE -n edge-demo rollout status deploy/mosquitto         --timeout=180s
 KUBE -n edge-demo rollout status statefulset/timescaledb  --timeout=300s
 KUBE -n edge-demo rollout status statefulset/sensor-sim   --timeout=180s
 KUBE -n edge-demo rollout status deploy/mqtt-tsdb-bridge  --timeout=300s
-KUBE -n edge-demo rollout status deploy/grafana           --timeout=180s
+KUBE -n edge-demo rollout status deploy/edge-agent        --timeout=300s
 
 echo "==> [4/4] Closing egress"
 for n in "${NODES[@]}"; do "$BOOTSTRAP" off "$n"; done
@@ -42,7 +48,9 @@ echo
 echo "==> Recent readings"
 KUBE -n edge-demo exec statefulset/timescaledb -- \
   psql -U edge -d sensors -c \
-  "SELECT sensor_id, COUNT(*) AS n, MAX(ts) AS last FROM readings GROUP BY sensor_id ORDER BY sensor_id;" || true
+  "SELECT source, COUNT(*) AS n, MAX(ts) AS last FROM readings GROUP BY source ORDER BY source;" || true
 echo
-echo "==> Grafana:  http://grafana.apps.airgap.local/  (admin/admin, inside airgap)"
+echo "==> Grafana:  https://grafana.apps.airgap.local/  (admin/admin)"
+echo "    Dashboards: 'Factory Line 1', 'Bridge Comparison: Python vs Rust'"
+echo "==> Burst:    airgap/scripts/run-burst.sh   (10K msgs, climax of demo)"
 echo "==> MQTT:     mosquitto.edge-demo.svc:1883  (cluster-internal)"

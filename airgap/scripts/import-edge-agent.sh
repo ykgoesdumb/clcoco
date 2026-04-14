@@ -4,7 +4,7 @@
 # containerd image store. Runs on the libvirt host.
 set -euo pipefail
 
-IMAGE="${IMAGE:-localhost/edge-agent:0.1.0}"
+IMAGE="${IMAGE:-localhost/edge-agent:0.2.0}"
 TAR="${TAR:-/tmp/edge-agent.tar}"
 NODES=(k3s-master k3s-worker1 k3s-worker2)
 NODE_IPS=(192.168.10.20 192.168.10.21 192.168.10.22)

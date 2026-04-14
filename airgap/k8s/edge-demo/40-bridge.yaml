@@ -6,10 +6,12 @@ metadata:
   namespace: edge-demo
 data:
   bridge.py: |
-    """MQTT → TimescaleDB bridge.
+    """MQTT → TimescaleDB bridge with Prometheus metrics on :9090.
 
     Subscribes to factory/# and inserts every reading into the readings
-    hypertable. Runs in the edge-demo namespace with cluster DNS only.
+    hypertable. Exposes bridge_messages_total / _insert_duration_seconds /
+    _parse_duration_seconds / _in_flight so a Prometheus scraper can compare
+    this bridge against the Rust edge-agent.
     """
     import json
     import os
@@ -19,12 +21,37 @@ data:
 
     import paho.mqtt.client as mqtt
     import psycopg2
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
     MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
     PG_HOST   = os.environ.get("PG_HOST", "timescaledb")
     PG_USER   = os.environ["POSTGRES_USER"]
     PG_PASS   = os.environ["POSTGRES_PASSWORD"]
     PG_DB     = os.environ["POSTGRES_DB"]
+
+    BUCKETS = (0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
+    LABELS = {"source": "python"}
+
+    msgs = Counter(
+        "bridge_messages_total", "messages handled", ["source", "result"]
+    )
+    insert_lat = Histogram(
+        "bridge_insert_duration_seconds",
+        "DB insert latency",
+        ["source"],
+        buckets=BUCKETS,
+    )
+    parse_lat = Histogram(
+        "bridge_parse_duration_seconds",
+        "JSON parse latency",
+        ["source"],
+        buckets=BUCKETS,
+    )
+    in_flight = Gauge(
+        "bridge_in_flight", "messages currently being processed", ["source"]
+    )
+
+    start_http_server(9090)
 
     for _ in range(60):
         try:
@@ -46,8 +73,13 @@ data:
 
     def on_message(_client, _userdata, msg):
         global inserted
+        in_flight.labels(**LABELS).inc()
         try:
+            t0 = time.perf_counter()
             d = json.loads(msg.payload)
+            parse_lat.labels(**LABELS).observe(time.perf_counter() - t0)
+
+            t1 = time.perf_counter()
             cur.execute(
                 "INSERT INTO readings "
                 "(ts, sensor_id, temperature_c, pressure_bar, humidity_pct) "
@@ -60,11 +92,16 @@ data:
                     d["humidity_pct"],
                 ),
             )
+            insert_lat.labels(**LABELS).observe(time.perf_counter() - t1)
+            msgs.labels(source="python", result="ok").inc()
             inserted += 1
-            if inserted % 50 == 0:
+            if inserted % 500 == 0:
                 print(f"inserted={inserted}", flush=True)
         except Exception as exc:
+            msgs.labels(source="python", result="error").inc()
             print(f"ERR: {exc}", flush=True)
+        finally:
+            in_flight.labels(**LABELS).dec()
 
     c = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2, client_id="mqtt-tsdb-bridge"
@@ -87,7 +124,9 @@ spec:
     matchLabels: { app: bridge }
   template:
     metadata:
-      labels: { app: bridge }
+      labels:
+        app: bridge
+        bridge: python
     spec:
       initContainers:
       - name: pip
@@ -97,7 +136,8 @@ spec:
         - -c
         - |
           set -e
-          pip install --no-cache-dir --target=/pip paho-mqtt==2.1.0 psycopg2-binary==2.9.9
+          pip install --no-cache-dir --target=/pip \
+            paho-mqtt==2.1.0 psycopg2-binary==2.9.9 prometheus-client==0.20.0
           echo "pip-ok"
         volumeMounts:
         - { name: pip, mountPath: /pip }
@@ -111,6 +151,8 @@ spec:
         - { name: PG_HOST,    value: timescaledb }
         envFrom:
         - secretRef: { name: tsdb-secret }
+        ports:
+        - { containerPort: 9090, name: metrics }
         volumeMounts:
         - { name: pip,  mountPath: /pip,  readOnly: true }
         - { name: code, mountPath: /code, readOnly: true }
@@ -122,3 +164,16 @@ spec:
         emptyDir: {}
       - name: code
         configMap: { name: bridge-code }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mqtt-tsdb-bridge
+  namespace: edge-demo
+  labels:
+    app: bridge
+    bridge: python
+spec:
+  selector: { app: bridge }
+  ports:
+  - { name: metrics, port: 9090, targetPort: metrics }

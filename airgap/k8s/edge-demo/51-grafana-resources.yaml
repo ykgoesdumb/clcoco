@@ -1,18 +1,24 @@
 ---
+# Datasources & the original sensor dashboard, formatted for the
+# kube-prometheus-stack Grafana sidecar (label `grafana_datasource: "1"` /
+# `grafana_dashboard: "1"`).
+# Replaces the standalone Grafana that lived in the old 50-grafana.yaml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: grafana-datasources
+  name: grafana-ds-edge-demo
   namespace: edge-demo
+  labels:
+    grafana_datasource: "1"
 data:
-  datasource.yaml: |
+  datasources.yaml: |
     apiVersion: 1
     datasources:
     - name: TimescaleDB
       uid: tsdb
       type: postgres
       access: proxy
-      url: timescaledb:5432
+      url: timescaledb.edge-demo.svc:5432
       database: sensors
       user: edge
       secureJsonData:
@@ -21,32 +27,25 @@ data:
         sslmode: disable
         postgresVersion: 1600
         timescaledb: true
+      isDefault: false
+      editable: false
+    - name: PrometheusKPS
+      uid: prom
+      type: prometheus
+      access: proxy
+      url: http://kps-prometheus.monitoring.svc:9090
       isDefault: true
       editable: false
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: grafana-dashboards-provider
+  name: grafana-dashboard-factory
   namespace: edge-demo
-data:
-  provider.yaml: |
-    apiVersion: 1
-    providers:
-    - name: edge-demo
-      orgId: 1
-      folder: edge-demo
-      type: file
-      disableDeletion: false
-      updateIntervalSeconds: 30
-      options:
-        path: /var/lib/grafana/dashboards
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboards
-  namespace: edge-demo
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: edge-demo
 data:
   factory.json: |
     {
@@ -141,79 +140,3 @@ data:
         }
       ]
     }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: grafana
-  namespace: edge-demo
-spec:
-  replicas: 1
-  selector:
-    matchLabels: { app: grafana }
-  template:
-    metadata:
-      labels: { app: grafana }
-    spec:
-      securityContext:
-        fsGroup: 472
-      containers:
-      - name: grafana
-        image: grafana/grafana:11.1.0
-        ports:
-        - { containerPort: 3000, name: http }
-        env:
-        - { name: GF_SECURITY_ADMIN_USER,       value: admin }
-        - { name: GF_SECURITY_ADMIN_PASSWORD,   value: admin }
-        - { name: GF_AUTH_ANONYMOUS_ENABLED,    value: "true" }
-        - { name: GF_AUTH_ANONYMOUS_ORG_ROLE,   value: Viewer }
-        - { name: GF_USERS_ALLOW_SIGN_UP,       value: "false" }
-        volumeMounts:
-        - { name: ds,  mountPath: /etc/grafana/provisioning/datasources }
-        - { name: dbp, mountPath: /etc/grafana/provisioning/dashboards }
-        - { name: dbs, mountPath: /var/lib/grafana/dashboards }
-        resources:
-          requests: { cpu: 50m,  memory: 128Mi }
-          limits:   { cpu: 500m, memory: 512Mi }
-      volumes:
-      - name: ds
-        configMap: { name: grafana-datasources }
-      - name: dbp
-        configMap: { name: grafana-dashboards-provider }
-      - name: dbs
-        configMap: { name: grafana-dashboards }
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: grafana
-  namespace: edge-demo
-spec:
-  selector: { app: grafana }
-  ports:
-  - { port: 3000, targetPort: 3000, name: http }
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: grafana
-  namespace: edge-demo
-  annotations:
-    cert-manager.io/cluster-issuer: airgap-ca
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-spec:
-  ingressClassName: traefik
-  tls:
-  - hosts: [grafana.apps.airgap.local]
-    secretName: grafana-tls
-  rules:
-  - host: grafana.apps.airgap.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: grafana
-            port: { number: 3000 }

@@ -1,0 +1,167 @@
+---
+# Bridge Comparison: Python vs Rust.
+# All Prometheus queries split by `source` label (python|rust) the bridges
+# emit on bridge_messages_total / bridge_*_duration_seconds / bridge_in_flight.
+# CPU/RSS panels use cAdvisor metrics scraped by kube-prometheus-stack from
+# kubelet, filtered by pod name regex.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-bridge-comparison
+  namespace: edge-demo
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: edge-demo
+data:
+  bridge-comparison.json: |
+    {
+      "title": "Bridge Comparison: Python vs Rust",
+      "schemaVersion": 38,
+      "uid": "bridge-comparison",
+      "tags": ["edge", "comparison"],
+      "timezone": "browser",
+      "time": { "from": "now-15m", "to": "now" },
+      "refresh": "5s",
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Python — msg/sec (1m)",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" }, "unit": "ops" } },
+          "targets": [{ "refId": "A", "expr": "sum(rate(bridge_messages_total{source=\"python\",result=\"ok\"}[1m]))" }]
+        },
+        {
+          "type": "stat",
+          "title": "Rust — msg/sec (1m)",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" }, "unit": "ops" } },
+          "targets": [{ "refId": "A", "expr": "sum(rate(bridge_messages_total{source=\"rust\",result=\"ok\"}[1m]))" }]
+        },
+        {
+          "type": "stat",
+          "title": "Python — in-flight",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 500 }
+              ]}
+            }
+          },
+          "targets": [{ "refId": "A", "expr": "max(bridge_in_flight{source=\"python\"})" }]
+        },
+        {
+          "type": "stat",
+          "title": "Rust — in-flight",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 500 }
+              ]}
+            }
+          },
+          "targets": [{ "refId": "A", "expr": "max(bridge_in_flight{source=\"rust\"})" }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Throughput (msg/sec, 1m rate) — by source",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "ops" } },
+          "targets": [{
+            "refId": "A",
+            "expr": "sum by (source) (rate(bridge_messages_total{result=\"ok\"}[1m]))",
+            "legendFormat": "{{source}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "In-flight queue depth — by source",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [{
+            "refId": "A",
+            "expr": "max by (source) (bridge_in_flight)",
+            "legendFormat": "{{source}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Insert latency p50 — by source",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [{
+            "refId": "A",
+            "expr": "histogram_quantile(0.5, sum by (source, le) (rate(bridge_insert_duration_seconds_bucket[1m])))",
+            "legendFormat": "{{source}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Insert latency p99 — by source",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [{
+            "refId": "A",
+            "expr": "histogram_quantile(0.99, sum by (source, le) (rate(bridge_insert_duration_seconds_bucket[1m])))",
+            "legendFormat": "{{source}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Container CPU (cores)",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [{
+            "refId": "A",
+            "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"edge-demo\", pod=~\"mqtt-tsdb-bridge.*|edge-agent.*\", container!=\"\", container!=\"POD\"}[1m]))",
+            "legendFormat": "{{pod}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Container RSS (bytes)",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [{
+            "refId": "A",
+            "expr": "max by (pod) (container_memory_working_set_bytes{namespace=\"edge-demo\", pod=~\"mqtt-tsdb-bridge.*|edge-agent.*\", container!=\"\", container!=\"POD\"})",
+            "legendFormat": "{{pod}}"
+          }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Errors (msg/sec)",
+          "datasource": { "type": "prometheus", "uid": "prom" },
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "ops" } },
+          "targets": [{
+            "refId": "A",
+            "expr": "sum by (source) (rate(bridge_messages_total{result=\"error\"}[1m]))",
+            "legendFormat": "{{source}}"
+          }]
+        },
+        {
+          "type": "table",
+          "title": "Burst rows ingested by bridge (last 10m)",
+          "datasource": { "type": "postgres", "uid": "tsdb" },
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 28 },
+          "targets": [{
+            "refId": "A",
+            "format": "table",
+            "rawSql": "SELECT source, COUNT(*)::bigint AS rows FROM readings WHERE sensor_id LIKE 'burst-%' AND ts > now() - INTERVAL '10 minutes' GROUP BY source ORDER BY source"
+          }]
+        }
+      ]
+    }

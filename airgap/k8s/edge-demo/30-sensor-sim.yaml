@@ -17,7 +17,7 @@ metadata:
   namespace: edge-demo
 spec:
   serviceName: sensor-sim
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels: { app: sensor-sim }
   template:
@@ -28,14 +28,17 @@ spec:
       - name: sim
         image: eclipse-mosquitto:2
         env:
-        - { name: MQTT_HOST, value: mosquitto }
+        - { name: MQTT_HOST,           value: mosquitto }
+        - { name: PUBLISH_INTERVAL_MS, value: "50" }
         command: ["/bin/sh", "-c"]
         args:
         - |
           SID="$(hostname)"
           IDX="${SID##*-}"
           T0=$(date +%s)
-          echo "sensor $SID (idx=$IDX) publishing to factory/line1/$SID"
+          # PUBLISH_INTERVAL_MS in ms → fractional seconds for sleep.
+          INTERVAL=$(awk -v ms="$PUBLISH_INTERVAL_MS" 'BEGIN{printf "%.3f", ms/1000.0}')
+          echo "sensor $SID (idx=$IDX) publishing to factory/line1/$SID every ${INTERVAL}s"
           while true; do
             NOW=$(date +%s)
             E=$((NOW - T0))
@@ -48,7 +51,7 @@ spec:
               printf "{\"sensor_id\":\"%s\",\"ts\":%d,\"temperature_c\":%.2f,\"pressure_bar\":%.3f,\"humidity_pct\":%.1f}", sid, now, temp, pres, hum
             }')
             mosquitto_pub -h "$MQTT_HOST" -t "factory/line1/$SID" -m "$PAYLOAD" || echo "publish failed"
-            sleep 1
+            sleep "$INTERVAL"
           done
         resources:
           requests: { cpu: 10m, memory: 16Mi }

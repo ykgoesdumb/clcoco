@@ -1,9 +1,55 @@
 use anyhow::{Context, Result};
-use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response};
+use hyper_util::rt::TokioIo;
+use lazy_static::lazy_static;
+use prometheus::{
+    register_counter_vec, register_gauge_vec, register_histogram_vec, CounterVec, Encoder,
+    GaugeVec, HistogramOpts, HistogramVec, TextEncoder,
+};
+use rumqttc::{AsyncClient, Event, Incoming as MqttIn, MqttOptions, QoS};
 use serde::Deserialize;
+use std::convert::Infallible;
 use std::env;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
+
+const SOURCE: &str = "rust";
+const BUCKETS: &[f64] = &[
+    0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0,
+];
+
+lazy_static! {
+    static ref MSGS: CounterVec = register_counter_vec!(
+        "bridge_messages_total",
+        "messages handled",
+        &["source", "result"]
+    )
+    .unwrap();
+    static ref INSERT_LAT: HistogramVec = register_histogram_vec!(
+        HistogramOpts::new("bridge_insert_duration_seconds", "DB insert latency")
+            .buckets(BUCKETS.to_vec()),
+        &["source"]
+    )
+    .unwrap();
+    static ref PARSE_LAT: HistogramVec = register_histogram_vec!(
+        HistogramOpts::new("bridge_parse_duration_seconds", "JSON parse latency")
+            .buckets(BUCKETS.to_vec()),
+        &["source"]
+    )
+    .unwrap();
+    static ref IN_FLIGHT: GaugeVec = register_gauge_vec!(
+        "bridge_in_flight",
+        "messages currently being processed",
+        &["source"]
+    )
+    .unwrap();
+}
 
 #[derive(Deserialize)]
 struct Reading {
@@ -22,6 +68,17 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| "info".into()),
         )
         .init();
+
+    // Touch metrics so they show up in /metrics before the first message.
+    MSGS.with_label_values(&[SOURCE, "ok"]).reset();
+    MSGS.with_label_values(&[SOURCE, "error"]).reset();
+    IN_FLIGHT.with_label_values(&[SOURCE]).set(0.0);
+
+    tokio::spawn(async {
+        if let Err(e) = run_metrics_server().await {
+            tracing::error!(error = %e, "metrics server died");
+        }
+    });
 
     let mqtt_host = env::var("MQTT_HOST").unwrap_or_else(|_| "mosquitto".into());
     let pg_host = env::var("PG_HOST").unwrap_or_else(|_| "timescaledb".into());
@@ -48,17 +105,26 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "edge-agent-rust".into());
     let mut opts = MqttOptions::new(client_id, mqtt_host.clone(), 1883);
     opts.set_keep_alive(Duration::from_secs(30));
-    let (client, mut eventloop) = AsyncClient::new(opts, 256);
+    let (client, mut eventloop) = AsyncClient::new(opts, 1024);
     client.subscribe("factory/#", QoS::AtMostOnce).await?;
     tracing::info!(%mqtt_host, "subscribed to factory/#");
 
     let mut inserted: u64 = 0;
     loop {
         match eventloop.poll().await {
-            Ok(Event::Incoming(Incoming::Publish(p))) => {
-                match serde_json::from_slice::<Reading>(&p.payload) {
+            Ok(Event::Incoming(MqttIn::Publish(p))) => {
+                IN_FLIGHT.with_label_values(&[SOURCE]).inc();
+
+                let parse_t = Instant::now();
+                let parsed = serde_json::from_slice::<Reading>(&p.payload);
+                PARSE_LAT
+                    .with_label_values(&[SOURCE])
+                    .observe(parse_t.elapsed().as_secs_f64());
+
+                match parsed {
                     Ok(r) => {
-                        match pg
+                        let insert_t = Instant::now();
+                        let res = pg
                             .execute(
                                 &stmt,
                                 &[
@@ -69,19 +135,32 @@ async fn main() -> Result<()> {
                                     &r.humidity_pct,
                                 ],
                             )
-                            .await
-                        {
+                            .await;
+                        INSERT_LAT
+                            .with_label_values(&[SOURCE])
+                            .observe(insert_t.elapsed().as_secs_f64());
+
+                        match res {
                             Ok(_) => {
+                                MSGS.with_label_values(&[SOURCE, "ok"]).inc();
                                 inserted += 1;
-                                if inserted % 50 == 0 {
+                                if inserted % 500 == 0 {
                                     tracing::info!(inserted, "progress");
                                 }
                             }
-                            Err(e) => tracing::warn!(error = %e, "insert failed"),
+                            Err(e) => {
+                                MSGS.with_label_values(&[SOURCE, "error"]).inc();
+                                tracing::warn!(error = %e, "insert failed");
+                            }
                         }
                     }
-                    Err(e) => tracing::warn!(error = %e, topic = %p.topic, "bad json"),
+                    Err(e) => {
+                        MSGS.with_label_values(&[SOURCE, "error"]).inc();
+                        tracing::warn!(error = %e, topic = %p.topic, "bad json");
+                    }
                 }
+
+                IN_FLIGHT.with_label_values(&[SOURCE]).dec();
             }
             Ok(_) => {}
             Err(e) => {
@@ -110,4 +189,34 @@ async fn connect_pg_with_retry(conn_str: &str) -> Result<tokio_postgres::Client>
         }
     }
     anyhow::bail!("postgres not reachable after 120s")
+}
+
+async fn metrics_handler(
+    _req: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
+    let encoder = TextEncoder::new();
+    let mut buf = Vec::new();
+    let metric_families = prometheus::gather();
+    encoder.encode(&metric_families, &mut buf).unwrap();
+    Ok(Response::builder()
+        .header("content-type", encoder.format_type())
+        .body(Full::new(Bytes::from(buf)))
+        .unwrap())
+}
+
+async fn run_metrics_server() -> Result<()> {
+    let listener = TcpListener::bind(("0.0.0.0", 9090)).await?;
+    tracing::info!("metrics server on :9090/metrics");
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        tokio::spawn(async move {
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service_fn(metrics_handler))
+                .await
+            {
+                tracing::warn!(error = %e, "metrics conn");
+            }
+        });
+    }
 }
