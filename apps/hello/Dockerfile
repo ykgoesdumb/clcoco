@@ -1,6 +1,6 @@
-# Offline-safe: python:3.12-slim is in platform/harbor/images/IMAGES.txt
-# and mirrored at harbor.airgap.local/mirror/python:3.12-slim.
-FROM python:3.12-slim
+# Offline-safe: pulled from Harbor mirror. Airgap gitea-runner cannot reach
+# docker.io, so FROM must be the FQDN — the comment is not enough.
+FROM harbor.airgap.local/mirror/python:3.12-slim
 
 WORKDIR /app
 COPY src/app.py /app/app.py

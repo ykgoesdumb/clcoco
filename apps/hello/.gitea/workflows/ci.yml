@@ -7,13 +7,31 @@ jobs:
   build:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      # Airgap-native checkout — act_runner's default `actions/checkout@v4`
+      # fetches from github.com, which the Gitea VM can't reach. Shell clone
+      # over the local Gitea instance uses the per-job token transparently.
+      - name: Checkout (airgap)
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          git init -q
+          git config --global --add safe.directory "$PWD"
+          HOST="${GITHUB_SERVER_URL#http://}"
+          HOST="${HOST#https://}"
+          git remote add origin "http://oauth2:${GITEA_TOKEN}@${HOST}/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
 
       - name: Login Harbor
         env:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
-        run: echo "$HARBOR_PASS" | skopeo login harbor.airgap.local -u "$HARBOR_USER" --password-stdin
+        # docker login (not skopeo) — the next step's `docker push` reads
+        # auth from ~/.docker/config.json, and skopeo writes to a different
+        # file in the alpine runner image. dockerd has insecure-registries
+        # set, so the self-signed Harbor cert is accepted.
+        run: echo "$HARBOR_PASS" | docker login harbor.airgap.local -u "$HARBOR_USER" --password-stdin
 
       - name: Build + push
         run: |

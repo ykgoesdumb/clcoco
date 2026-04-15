@@ -1,0 +1,148 @@
+{
+  "title": "Bridge Footprint — Python vs Rust",
+  "uid": "bridge-footprint",
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-10m", "to": "now" },
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Memory RSS (MiB)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "mbytes",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "python" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "rust" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max", "mean"] } },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "postgres", "uid": "tsdb" },
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "SELECT time_bucket('2 seconds', ts) AS time, app AS metric, max(mem_mi)::float AS value FROM pod_stats WHERE $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "Python / Rust mem ratio",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 10, "x": 14, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 3 },
+            { "color": "red", "value": 10 }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "textMode": "auto" },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "postgres", "uid": "tsdb" },
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "WITH latest AS ( SELECT app, mem_mi FROM pod_stats WHERE ts > now() - interval '10 seconds' ) SELECT now() AS time, 'ratio×' AS metric, GREATEST((SELECT avg(mem_mi) FROM latest WHERE app='python'),1) / GREATEST((SELECT avg(mem_mi) FROM latest WHERE app='rust'),1) AS value"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "Latest Memory (MiB)",
+      "type": "bargauge",
+      "gridPos": { "h": 5, "w": 10, "x": 14, "y": 5 },
+      "datasource": { "type": "postgres", "uid": "tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "mbytes",
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "python" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "rust" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "postgres", "uid": "tsdb" },
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "SELECT ts AS time, app AS metric, mem_mi::float AS value FROM pod_stats WHERE ts > now() - interval '10 seconds' ORDER BY 1"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "CPU (milli-cores)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "python" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "rust" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max", "mean"] } },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "postgres", "uid": "tsdb" },
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "SELECT time_bucket('2 seconds', ts) AS time, app AS metric, max(cpu_m)::float AS value FROM pod_stats WHERE $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "CPU total (last 1m, mCPU·s)",
+      "type": "bargauge",
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "tsdb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "python" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "rust" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "postgres", "uid": "tsdb" },
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "SELECT now() AS time, app AS metric, sum(cpu_m)::float AS value FROM pod_stats WHERE ts > now() - interval '1 minute' GROUP BY app"
+      }]
+    }
+  ]
+}
